@@ -1,25 +1,38 @@
-Ferry - portable file copy & sync
-=================================
+Ferry - copy and sync your files, safely
+=========================================
 
-ferry      (ferry.exe)      command line, terminal UI (ferry tui) and background service
-ferry-gui  (ferry-gui.exe)  desktop window (macOS: Ferry-gui.app)
+What's in this folder
+  ferry-gui  (ferry-gui.exe / ferry-gui.app)   the desktop app  <- start here
+  ferry      (ferry.exe)                       commands, terminal app, background helper
 
 No installation and no administrator rights needed.
 
-Portable mode: create an empty folder named "ferry-data" next to the executable
-and Ferry keeps all settings, jobs and logs there (e.g. on a USB stick).
-Otherwise settings live in your user profile (ferry config path shows where).
+First start
+  Windows: double-click ferry-gui.exe. If "Windows protected your PC" appears:
+           More info -> Run anyway.
+  macOS:   right-click ferry-gui -> Open -> Open (only the first time).
+  Linux:   ./ferry-gui   (if needed first: chmod +x ferry ferry-gui)
 
-Quick start
-  ferry copy  <source> <dest>              copy new/changed files
-  ferry mirror <source> <dest>             make dest identical (old versions archived)
-  ferry robo  <source> <dest> /MIR /R:2    robocopy syntax
-  ferry tui                                full-screen terminal UI
-  ferry telegram setup                     connect the Telegram bot
-  ferry service install                    start in the background at login
+Your first copy
+  Click "New copy", choose the Source and Destination folders, click "Run now".
 
-Cloud storage: put rclone (https://rclone.org/downloads/) next to ferry and
-configure remotes with "rclone config"; then use remote:path as source/dest.
+Same with a command (macOS/Linux: ./ferry)
+  ferry copy   SOURCE DEST            copy new and changed files
+  ferry mirror SOURCE DEST            make DEST exactly like SOURCE
+  ferry mirror SOURCE DEST --dry-run  only show what would happen
+  ferry robo   SOURCE DEST /MIR /R:2  robocopy syntax
+  ferry tui                           full-screen terminal app (servers)
+  ferry service install               start Ferry automatically at login
+  ferry telegram setup                control Ferry from Telegram
+  ferry --help                        all commands
 
-macOS: the first time, right-click the app -> Open (the build is not notarized).
-Linux: chmod +x ferry ferry-gui if needed.
+Safety: files that would be replaced or deleted are kept in
+DEST/.ferry-archive/<date>/ - copy them back from there if you need them.
+
+Portable mode: make an empty folder named "ferry-data" next to these files.
+Ferry then keeps all settings, jobs and logs in it (great for USB sticks).
+
+Clouds (Google Drive, OneDrive, S3...): put rclone (https://rclone.org/downloads/)
+next to ferry, run "rclone config", then use remote:path as a folder.
+
+Full guide: https://github.com/arikpinhasov1998/Ferry/blob/main/docs/GUIDE.md

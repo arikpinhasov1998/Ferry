@@ -323,6 +323,36 @@ def cmd_transfer(a) -> int:
     return _exit_code(info)
 
 
+ROBO_HELP = """usage: ferry robo SOURCE DEST [file [file]...] [/options] [--local] [--bg]
+       ferry SOURCE DEST /options          (same, "robo" can be left out)
+
+Robocopy-compatible: the options mean what they mean in robocopy.
+Without /S, /E or /MIR only the top folder is copied. /MIR deletes directly (no archive).
+Exit code is robocopy's: 0 nothing to do, 1 copied, 2 extras deleted, 8+ failures.
+
+Supported:
+  /S /E /LEV:n                 subfolders, incl. empty ones, depth
+  /MIR /PURGE                  mirror / delete extra destination files
+  /MOV /MOVE                   move files / files and folders
+  /COPY:DATSOU /COPYALL /SEC /DCOPY:DAT   what to copy
+  /SL /SJ /XJ                  links as links / junctions
+  /XF f.. /XD d.. /IF f..      exclude files / exclude folders / include files
+  /XO /XN /XC /IS /IT /XX /XL  older/newer/changed/same/tweaked/extra/lonely
+  /MAX:n /MIN:n /MAXAGE:n /MINAGE:n /MAXLAD:n /MINLAD:n   size and age
+  /R:n /W:n /MT[:n]            retries, wait seconds, threads
+  /L                           list only (dry run)
+  /LOG:f /LOG+:f /UNILOG:f /TEE  log file
+  /IPG:ms /RH:hhmm-hhmm        inter-packet gap / run hours
+  /FFT                         2-second time tolerance
+  /MON:n /MOT:m                keep watching for changes (live sync)
+Display options (/NP /NFL /NDL /NJH /NJS /V /ETA /BYTES ...) are accepted and ignored.
+
+Examples:
+  ferry robo C:\\src D:\\dst /MIR /R:2 /W:5 /XD node_modules /MT:16 /LOG:copy.log
+  ferry robo C:\\src D:\\dst *.docx /S /XO
+"""
+
+
 def cmd_robo(argv: list[str], a_local=False, a_bg=False) -> int:
     from ferry import robocopy
     r = robocopy.parse(argv)
@@ -836,6 +866,9 @@ def main(argv: list[str] | None = None) -> int:
         build_parser().print_help()
         return 0
     try:
+        if argv[0] == "robo" and (len(argv) == 1 or set(argv[1:2]) & {"-h", "--help", "/?", "-?"}):
+            _out(ROBO_HELP)
+            return 0
         if argv[0] not in SUBCOMMANDS and len(argv) >= 2:
             return cmd_robo(argv)       # "ferry SRC DST /MIR ..."
         a = build_parser().parse_args(argv)
