@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 — 2026-11-14
 
 ### New
 - **Ferry has an icon** — a little ferry boat — everywhere: the Windows `.exe` files (Explorer, taskbar, Start
