@@ -99,6 +99,17 @@ No installer and **no administrator rights** are needed.
   **Edit** → **New** → paste the Ferry folder → OK. Open a new terminal.
 - **macOS/Linux:** `mkdir -p ~/.local/bin && cp ferry ~/.local/bin/` (and make sure `~/.local/bin` is in your PATH).
 
+### Optional: put Ferry in your Start menu / app menu
+
+So you can open Ferry like any other program (with its icon):
+
+- **Windows / Linux:** in the desktop app go to **Settings → Shortcut → Add to Start menu** (Windows) or
+  **Add to app menu** (Linux). Or run `ferry shortcut install`. `ferry shortcut uninstall` removes it again.
+- **macOS:** drag `ferry-gui.app` into your **Applications** folder. It already has its icon, so it shows up in
+  Launchpad, Spotlight and the Dock.
+
+On Linux this also makes the taskbar show Ferry's icon instead of a generic one.
+
 ### Portable mode (on a USB stick)
 
 Make an **empty folder named `ferry-data`** next to the `ferry` files. From then on Ferry keeps *all* its
@@ -215,6 +226,7 @@ many failed. Select one and use **Log** or **Errors** for the details.
 | **Telegram bot** | Connect and configure the bot — see [section 14](#14-the-telegram-bot) |
 | **Defaults** | Parallel transfers and retries for new copies; *Resume interrupted runs when the service starts* |
 | **Background service** | **Install / start at login** so Ferry runs after every login; **Remove** to undo |
+| **Shortcut** (Windows/Linux) | **Add to Start menu / app menu** so you can open Ferry with its icon like any program; **Remove** to undo |
 
 Press **Save settings** at the bottom after changing things (the theme saves by itself). **Undo changes** puts
 back what's saved.
@@ -694,6 +706,9 @@ Manual control:
 ferry daemon start | stop | restart | status
 ```
 
+To open Ferry from the Start menu / app menu, see
+[Put Ferry in your Start menu](#optional-put-ferry-in-your-start-menu--app-menu).
+
 It listens only on your own computer (address `127.0.0.1`, port 47821) and every request needs a secret key
 stored in your settings, so other people on the network can't control it.
 
@@ -721,6 +736,10 @@ needed. **Only the people you allow** can use it; everyone else is ignored.
 5. Press **Finish and connect**. The bot sends *"✅ Ferry on My-PC is connected."*
 
 ![Telegram setup](images/gui-telegram-setup.png)
+
+**Give your bot Ferry's picture (optional):** press **Save bot picture…** in the setup window, then send
+`/setuserpic` to @BotFather, pick your bot and send the saved picture. (Bots can't change their own picture, so
+this one step is done in BotFather.)
 
 The Settings tab now shows **● Connected @your_bot**. If something is wrong it says what (wrong token, no
 internet, or another computer using the same bot).
@@ -903,7 +922,8 @@ No. Ferry only talks to the places you copy to, and to Telegram if you set up th
 your files — except logs/reports when you ask with `/log` or `/report`).
 
 **How do I uninstall?**
-`ferry service uninstall`, then delete the Ferry folder and the settings folder (`ferry config path`).
+`ferry service uninstall` and `ferry shortcut uninstall`, then delete the Ferry folder and the settings folder
+(`ferry config path`).
 
 **How do I see what changed in the last run?**
 The **Log** button or `ferry log RUN`: every copied, updated, deleted and failed file is listed.
@@ -936,8 +956,8 @@ ferry confirm NAME      ferry errors NAME        ferry log NAME
 # places
 \\server\share\dir      sftp://me@host/path      gdrive:Backup (rclone)
 
-# apps, helper, bot
-ferry gui     ferry tui     ferry service install     ferry telegram setup
+# apps, helper, bot, menu shortcut
+ferry gui     ferry tui     ferry service install     ferry telegram setup     ferry shortcut install
 
 # robocopy style
 ferry robo C:\src D:\dst /MIR /R:2 /W:5 /MT:16 /LOG:copy.log

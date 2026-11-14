@@ -30,8 +30,15 @@ COMMON = [
     "--hidden-import", "xxhash",
     "--hidden-import", "paramiko",
 ]
+ICONS = ROOT / "packaging" / "icons"
+# window/tray icons are loaded from ferry/assets at runtime
+COMMON += ["--add-data", f"{ROOT / 'ferry' / 'assets'}{os.pathsep}ferry/assets"]
 if IS_WIN:
-    COMMON += ["--hidden-import", "win32security", "--hidden-import", "win32api"]
+    COMMON += ["--icon", str(ICONS / "ferry.ico")]          # Explorer, taskbar, Start menu
+elif IS_MAC:
+    COMMON += ["--icon", str(ICONS / "ferry.icns")]         # Finder, Dock
+if IS_WIN:
+    COMMON += ["--hidden-import", "win32security", "--hidden-import", "win32api", "--hidden-import", "win32com.client"]
 if IS_MAC:
     COMMON += ["--hidden-import", "xattr"]
 

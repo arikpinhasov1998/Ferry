@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- simplified Ferry icon for 16-32 px (tray, taskbar, title bar): fewer, bolder shapes -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2196f3"/>
+      <stop offset="1" stop-color="#0d47a1"/>
+    </linearGradient>
+    <clipPath id="tile">
+      <rect x="32" y="32" width="960" height="960" rx="200"/>
+    </clipPath>
+  </defs>
+  <rect x="32" y="32" width="960" height="960" rx="200" fill="url(#bg)"/>
+  <g clip-path="url(#tile)">
+    <path d="M580 230 h130 l-18 170 h-94 z" fill="#ff7043"/>
+    <rect x="250" y="370" width="520" height="190" rx="40" fill="#ffffff"/>
+    <rect x="320" y="420" width="130" height="90" rx="20" fill="#1565c0"/>
+    <rect x="570" y="420" width="130" height="90" rx="20" fill="#1565c0"/>
+    <path d="M110 560 H914 L820 760 H204 z" fill="#ffffff"/>
+    <path d="M-60 820 q120 -80 240 0 t240 0 t240 0 t240 0 t240 0 V1100 H-60 z" fill="#bbdefb"/>
+  </g>
+</svg>

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### New
+- **Ferry has an icon** — a little ferry boat — everywhere: the Windows `.exe` files (Explorer, taskbar, Start
+  menu), the macOS app (Finder, Dock, Launchpad), the window title bar, the tray, dialogs and the Linux taskbar.
+  A bolder version is used at small sizes (16–32 px) so it stays readable.
+- **Start menu / app menu shortcut**: Settings → *Add to Start menu* (Windows) / *Add to app menu* (Linux), or
+  `ferry shortcut install|uninstall|status`.
+- Telegram setup: **Save bot picture…** to give your bot Ferry's icon via @BotFather's `/setuserpic`.
+- README logo; `packaging/make_icons.py` renders every icon file from `ferry/assets/ferry.svg`, and
+  `packaging/screenshots.py` regenerates the documentation screenshots.
+
 ## 1.1.0 — 2026-11-14
 
 ### New

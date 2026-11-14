@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2196f3"/>
+      <stop offset="1" stop-color="#0d47a1"/>
+    </linearGradient>
+    <linearGradient id="hull" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e3f2fd"/>
+    </linearGradient>
+    <clipPath id="tile">
+      <rect x="64" y="64" width="896" height="896" rx="200"/>
+    </clipPath>
+  </defs>
+  <!-- rounded square tile (keeps the usual margin for OS icon grids) -->
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#bg)"/>
+  <g clip-path="url(#tile)">
+    <!-- sun -->
+    <circle cx="760" cy="250" r="70" fill="#ffca28"/>
+    <!-- funnel -->
+    <path d="M598 292 h92 l-14 124 h-64 z" fill="#ff7043"/>
+    <rect x="592" y="290" width="104" height="34" rx="10" fill="#263238"/>
+    <!-- cabin with windows -->
+    <rect x="292" y="404" width="440" height="132" rx="28" fill="#ffffff"/>
+    <rect x="334" y="440" width="70" height="58" rx="14" fill="#1565c0"/>
+    <rect x="428" y="440" width="70" height="58" rx="14" fill="#1565c0"/>
+    <rect x="522" y="440" width="70" height="58" rx="14" fill="#1565c0"/>
+    <rect x="616" y="440" width="70" height="58" rx="14" fill="#1565c0"/>
+    <!-- hull -->
+    <path d="M182 548 H842 a24 24 0 0 1 22 33 L796 712 a40 40 0 0 1 -36 22 H264 a40 40 0 0 1 -36 -22 L160 581 a24 24 0 0 1 22 -33 z"
+          fill="url(#hull)"/>
+    <rect x="206" y="596" width="612" height="30" rx="15" fill="#ff7043"/>
+    <!-- waves -->
+    <path d="M0 780 q64 -46 128 0 t128 0 t128 0 t128 0 t128 0 t128 0 t128 0 t128 0 V1024 H0 z" fill="#64b5f6"/>
+    <path d="M-64 846 q64 -42 128 0 t128 0 t128 0 t128 0 t128 0 t128 0 t128 0 t128 0 t128 0 V1024 H-64 z" fill="#bbdefb"/>
+  </g>
+</svg>

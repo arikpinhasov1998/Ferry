@@ -1,4 +1,6 @@
-# Ferry 🚢
+<p align="center"><img src="docs/images/logo.png" width="128" alt="Ferry icon"></p>
+
+<h1 align="center">Ferry</h1>
 
 **Ferry carries your files from one place to another, safely.**
 
@@ -105,6 +107,7 @@ On macOS/Linux use `./ferry` and paths like `~/Pictures /media/usb/Pictures`.
 | Pause / continue / stop | **Pause**, **Resume**, **Cancel** buttons | `ferry pause all`, `ferry resume all`, `ferry cancel NAME` |
 | See which files failed | **Errors** button | `ferry errors NAME` |
 | Keep Ferry running after login | Settings → **Install / start at login** | `ferry service install` |
+| Open Ferry from the Start menu / app menu | Settings → **Add to Start menu / app menu** | `ferry shortcut install` |
 | Control it from my phone | Settings → **Set up bot…** | `ferry telegram setup` |
 | Use it on a server without a screen | — | `ferry tui` |
 | Switch light / dark mode | Settings → **Theme** | in `ferry tui` press `t` |

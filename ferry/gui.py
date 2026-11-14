@@ -103,26 +103,14 @@ def phase_color(phase: str) -> str:
 
 
 def app_icon() -> QIcon:
-    pm = QPixmap(64, 64)
-    pm.fill(Qt.transparent)
-    p = QPainter(pm)
-    p.setRenderHint(QPainter.Antialiasing)
-    p.setBrush(QColor("#1565c0"))
-    p.setPen(Qt.NoPen)
-    p.drawRoundedRect(2, 2, 60, 60, 14, 14)
-    hull = QPainterPath()
-    hull.moveTo(12, 34)
-    hull.lineTo(52, 34)
-    hull.lineTo(45, 46)
-    hull.lineTo(19, 46)
-    hull.closeSubpath()
-    p.setBrush(QColor("white"))
-    p.drawPath(hull)
-    p.drawRect(24, 22, 16, 10)
-    p.setBrush(QColor("#90caf9"))
-    p.drawRect(10, 50, 44, 3)
-    p.end()
-    return QIcon(pm)
+    """The Ferry icon in every size (bold drawing for 16-32 px, detailed one above)."""
+    from ferry.shortcut import ICON_SIZES, icon_path
+    icon = QIcon()
+    for size in ICON_SIZES:
+        p = icon_path(size)
+        if p.exists():
+            icon.addFile(str(p), QSize(size, size))
+    return icon
 
 
 def _phase(r):
@@ -404,12 +392,32 @@ class TelegramSetupDialog(QDialog):
         self.step2.setEnabled(False)
         lay.addWidget(self.step2)
 
+        pic = QHBoxLayout()
+        tip = QLabel("<small>Optional: give the bot Ferry's picture — save it, then send <code>/setuserpic</code> "
+                     "to @BotFather and send the picture.</small>")
+        tip.setWordWrap(True)
+        save_pic = QPushButton("Save bot picture…")
+        save_pic.clicked.connect(self.save_picture)
+        pic.addWidget(tip, 1)
+        pic.addWidget(save_pic)
+        lay.addLayout(pic)
+
         self.buttons = QDialogButtonBox(QDialogButtonBox.Cancel)
         self.finish_btn = self.buttons.addButton("Finish and connect", QDialogButtonBox.AcceptRole)
         self.finish_btn.setEnabled(False)
         self.buttons.accepted.connect(self.finish)
         self.buttons.rejected.connect(self.reject)
         lay.addWidget(self.buttons)
+
+    def save_picture(self):
+        import shutil
+        from pathlib import Path
+
+        from ferry.shortcut import icon_path
+        path, _ = QFileDialog.getSaveFileName(self, "Save bot picture", str(Path.home() / "ferry-bot.png"),
+                                              "PNG image (*.png)")
+        if path:
+            shutil.copyfile(icon_path(512), path)
 
     # --------------------------------------------------------- workers --
     def _bg(self, kind, fn):
@@ -739,6 +747,23 @@ class MainWindow(QMainWindow):
         hl.addWidget(bi)
         hl.addWidget(bu)
         lay.addWidget(g)
+
+        from ferry import shortcut
+        if shortcut.supported():
+            where = "Start menu" if sys.platform == "win32" else "app menu"
+            g = QGroupBox(f"Shortcut in the {where}")
+            hl = QHBoxLayout(g)
+            self.s_shortcut = QLabel()
+            si = QPushButton(f"Add to {where}")
+            si.clicked.connect(lambda: self.shortcut("install"))
+            su = QPushButton("Remove")
+            su.clicked.connect(lambda: self.shortcut("uninstall"))
+            hl.addWidget(self.s_shortcut, 1)
+            hl.addWidget(si)
+            hl.addWidget(su)
+            lay.addWidget(g)
+        else:
+            self.s_shortcut = None
         row = QHBoxLayout()
         b = QPushButton("Save settings")
         b.setDefault(True)
@@ -1068,6 +1093,10 @@ class MainWindow(QMainWindow):
         from ferry import service
         installed, where = service.status()
         self.s_service.setText(f"Installed: {where}" if installed else "Not installed — runs only while started")
+        if self.s_shortcut is not None:
+            from ferry import shortcut
+            there, path = shortcut.status()
+            self.s_shortcut.setText(f"Added: {path}" if there else "Not added — open Ferry from its folder")
 
     def save_settings(self):
         def ids(edit):
@@ -1159,6 +1188,15 @@ class MainWindow(QMainWindow):
             else:
                 QMessageBox.warning(self, "Telegram", f"Problem: {res.get('error')}")
 
+    def shortcut(self, what):
+        from ferry import shortcut
+        try:
+            msg = shortcut.install() if what == "install" else shortcut.uninstall()
+            QMessageBox.information(self, "Shortcut", msg)
+        except Exception as e:
+            QMessageBox.warning(self, "Shortcut", str(e))
+        self.load_settings()
+
     def service(self, what):
         from ferry import service
         try:
@@ -1173,6 +1211,7 @@ def main() -> int:
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("Ferry")
     app.setWindowIcon(app_icon())
+    app.setDesktopFileName("ferry")     # Linux: match ferry.desktop so the taskbar shows the icon
     app.setQuitOnLastWindowClosed(False)
     try:
         from ferry.daemon import ensure_daemon

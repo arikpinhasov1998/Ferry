@@ -48,5 +48,8 @@ version = { attr = "ferry.__version__" }
 [tool.setuptools.packages.find]
 include = ["ferry*"]
 
+[tool.setuptools.package-data]
+ferry = ["assets/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

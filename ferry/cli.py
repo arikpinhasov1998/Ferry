@@ -25,7 +25,7 @@ from ferry import __version__
 from ferry.util import human_bytes, human_duration, progress_bar
 
 SUBCOMMANDS = {"copy", "mirror", "move", "robo", "job", "jobs", "status", "runs", "history", "pause", "resume",
-               "cancel", "confirm", "errors", "log", "daemon", "service", "telegram", "config", "tui", "gui",
+               "cancel", "confirm", "errors", "log", "daemon", "service", "shortcut", "telegram", "config", "tui", "gui",
                "version", "help", "-h", "--help", "--version"}
 
 FINAL = {"done", "completed_with_errors", "failed", "cancelled", "interrupted"}
@@ -609,6 +609,18 @@ def cmd_service(a) -> int:
     return 0
 
 
+def cmd_shortcut(a) -> int:
+    from ferry import shortcut
+    if a.shortcut_cmd == "install":
+        _out(shortcut.install())
+    elif a.shortcut_cmd == "uninstall":
+        _out(shortcut.uninstall())
+    else:
+        there, where = shortcut.status()
+        _out(f"Added: {where}" if there else "Not added (ferry shortcut install)")
+    return 0
+
+
 def cmd_telegram(a) -> int:
     from ferry.api import Client
     from ferry.config import Config
@@ -808,6 +820,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("service", help="start automatically at login (no admin): install|uninstall|status")
     sp.add_argument("service_cmd", choices=["install", "uninstall", "status"])
 
+    sp = sub.add_parser("shortcut", help="add Ferry with its icon to the Start menu / app menu: install|uninstall|status")
+    sp.add_argument("shortcut_cmd", choices=["install", "uninstall", "status"])
+
     sp = sub.add_parser("telegram", help="Telegram bot: setup|status|allow|deny|enable|disable|test")
     tsub = sp.add_subparsers(dest="tg_cmd")
     ts = tsub.add_parser("setup")
@@ -898,6 +913,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_daemon(a)
         if cmd == "service":
             return cmd_service(a)
+        if cmd == "shortcut":
+            return cmd_shortcut(a)
         if cmd == "telegram":
             return cmd_telegram(a)
         if cmd == "config":
