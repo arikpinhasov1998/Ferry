@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
                                QTextBrowser, QToolBar, QVBoxLayout, QWidget)
 
 from ferry import __version__
+from ferry.spec import full_location
 from ferry.util import human_bytes, human_duration
 
 FINAL = {"done", "completed_with_errors", "failed", "cancelled", "interrupted"}
@@ -216,7 +217,8 @@ class JobDialog(QDialog):
     def spec(self) -> dict:
         d = dict(self.job)
         d.update({
-            "name": self.name.text().strip(), "source": self.source.text(), "dest": self.dest.text(),
+            "name": self.name.text().strip(), "source": full_location(self.source.text()),
+            "dest": full_location(self.dest.text()),
             "mode": self.mode.currentData(), "delete_mode": self.delete_mode.currentData(),
             "overwrite": self.overwrite.currentData(), "verify": self.verify.currentData(),
             "threads": self.threads.value(), "retries": self.retries.value(),

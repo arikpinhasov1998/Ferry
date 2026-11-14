@@ -109,3 +109,17 @@ def test_robocopy_translation():
     assert r2.spec["metadata"]["symlinks"] == "copy"
     assert robocopy.exit_code({"phase": "done", "done_files": 3, "deleted": 1}) == 3
     assert robocopy.exit_code({"phase": "completed_with_errors", "done_files": 1}) == 9
+
+
+def test_full_location_and_relative_paths_rejected(tmp_path, monkeypatch):
+    import os
+    import pytest
+    from ferry.spec import JobSpec, full_location
+    monkeypatch.chdir(tmp_path)
+    assert full_location("Photos") == str(tmp_path / "Photos")
+    assert full_location("~/x") == os.path.expanduser("~/x")
+    for remote in ("sftp://me@host/data", "gdrive:Backup/Docs"):
+        assert full_location(remote) == remote
+    with pytest.raises(ValueError, match="full path"):
+        JobSpec.from_dict({"source": "Photos", "dest": str(tmp_path / "b")}).validate()
+    JobSpec.from_dict({"source": full_location("Photos"), "dest": "gdrive:b"}).validate()

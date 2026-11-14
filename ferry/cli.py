@@ -190,13 +190,34 @@ def summary(info: dict) -> str:
         lines.append(f"  error    {info['error']}")
     if info.get("log"):
         lines.append(f"  log      {info['log']}")
+    if info.get("dry_run"):
+        lines += dry_run_details(info)
     return "\n".join(lines)
+
+
+def dry_run_details(info: dict, limit: int = 40) -> list[str]:
+    """The planned changes of a dry run, read from its log, so people see *what* would happen."""
+    path = info.get("log")
+    if not path or not os.path.exists(path):
+        return []
+    planned = []
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            if "[dry-run]" in line:
+                planned.append(line.split("[dry-run]", 1)[1].strip())
+    if not planned:
+        return ["", "Nothing would change: the destination is already up to date."]
+    out = ["", "This is what would happen (nothing was changed):"]
+    out += [f"  {x}" for x in planned[:limit]]
+    if len(planned) > limit:
+        out.append(f"  … and {len(planned) - limit:,} more (see the log)")
+    return out
 
 
 def follow(get_info, control, quiet=False) -> dict:
     """Show live progress until the run ends. control: dict(cancel=, confirm=)."""
     tty = sys.stdout.isatty()
-    last_print = 0.0
+    last_print = time.time()         # not a terminal: a status line every 30 s, starting after 30 s
     info = get_info()
     while True:
         try:
@@ -248,7 +269,8 @@ def follow(get_info, control, quiet=False) -> dict:
 
 def run_spec(spec_dict: dict, a, quiet=False) -> dict:
     """Run a job via the daemon (default) or in-process (--local)."""
-    from ferry.spec import JobSpec
+    from ferry.spec import JobSpec, full_location
+    spec_dict = dict(spec_dict, source=full_location(spec_dict["source"]), dest=full_location(spec_dict["dest"]))
     spec = JobSpec.from_dict(spec_dict).validate()
     if not getattr(a, "local", False):
         try:
@@ -287,8 +309,9 @@ def cmd_transfer(a) -> int:
     apply_job_args(d, a)
     if a.save:
         from ferry.jobs import JobStore
-        from ferry.spec import JobSpec
+        from ferry.spec import JobSpec, full_location
         d["name"] = a.save
+        d["source"], d["dest"] = full_location(d["source"]), full_location(d["dest"])
         job = JobStore().put(JobSpec.from_dict(d))
         _out(f"Saved job '{job.name}' ({job.id}).")
         if a.save_only:
@@ -334,7 +357,7 @@ def _client(start=False):
 
 def cmd_job(a) -> int:
     from ferry.jobs import JobStore
-    from ferry.spec import JobSpec
+    from ferry.spec import JobSpec, full_location
     store = JobStore()
     sub = a.job_cmd or "list"
     if sub == "list":
@@ -355,7 +378,7 @@ def cmd_job(a) -> int:
             _out(f"{j.name:20} {j.mode:7} {j.source} -> {j.dest}  {' '.join(extra)}")
         return 0
     if sub == "add":
-        d = {"name": a.job_name, "source": a.source, "dest": a.dest, "mode": a.mode}
+        d = {"name": a.job_name, "source": full_location(a.source), "dest": full_location(a.dest), "mode": a.mode}
         apply_job_args(d, a)
         job = store.put(JobSpec.from_dict(d))
         _out(f"Saved job '{job.name}' ({job.id}).")
@@ -368,9 +391,9 @@ def cmd_job(a) -> int:
     elif sub == "edit":
         d = job.to_dict()
         if a.source:
-            d["source"] = a.source
+            d["source"] = full_location(a.source)
         if a.dest:
-            d["dest"] = a.dest
+            d["dest"] = full_location(a.dest)
         if a.mode:
             d["mode"] = a.mode
         if a.disable:
@@ -392,7 +415,7 @@ def cmd_job(a) -> int:
             d = job.to_dict()
             if a.dry_run:
                 d["dry_run"] = True
-            info = run_spec(d, a)
+            info = run_spec(d, a, quiet=a.quiet)
         else:
             c = _client(start=True)
             info = c.post(f"/jobs/{job.id}/run", {"dry_run": bool(a.dry_run), "trigger": "cli"})
@@ -403,7 +426,7 @@ def cmd_job(a) -> int:
             info = follow(lambda: c.get(f"/runs/{rid}"),
                           {"cancel": lambda: c.post(f"/runs/{rid}/cancel"),
                            "confirm": lambda ch: c.post(f"/runs/{rid}/confirm", {"choice": ch}),
-                           "detach": True})
+                           "detach": True}, a.quiet)
         if not info.get("detached"):
             _out(summary(info))
         return _exit_code(info)
@@ -728,6 +751,7 @@ def build_parser() -> argparse.ArgumentParser:
     jr.add_argument("-n", "--dry-run", action="store_true")
     jr.add_argument("--bg", action="store_true")
     jr.add_argument("--local", action="store_true")
+    jr.add_argument("-q", "--quiet", action="store_true", help="no live progress line")
 
     sp = sub.add_parser("status", help="service status, or details of one run")
     sp.add_argument("run", nargs="?")

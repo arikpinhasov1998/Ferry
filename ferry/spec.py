@@ -1,11 +1,31 @@
 """Job specification: everything that describes one copy/sync job."""
 from __future__ import annotations
 
+import os
 import re
 import uuid
 from dataclasses import asdict, dataclass, field, fields
 
 from ferry.util import TimeWindow, parse_size
+
+
+def _is_remote(loc: str) -> bool:
+    from ferry.backends.rclone import is_rclone_spec
+    return loc.lower().startswith(("sftp://", "ssh://")) or is_rclone_spec(loc)
+
+
+def full_location(loc: str) -> str:
+    """Turn a folder typed by a person ('Photos', '~/x', '..\\data') into a full path.
+
+    Needed because the background service runs in another folder than the terminal or
+    window the path was typed in. Remote locations (sftp://, remote:path) are kept as-is.
+    """
+    s = (loc or "").strip()
+    if not s or _is_remote(s):
+        return s
+    if s.lower().startswith("file://"):
+        s = s[7:]
+    return os.path.abspath(os.path.expanduser(s))
 
 MODES = ("copy", "mirror", "move")
 DELETE_MODES = ("delete", "archive", "confirm")
@@ -63,6 +83,10 @@ class JobSpec:
     def validate(self) -> "JobSpec":
         if not self.source or not self.dest:
             raise ValueError("source and destination are required")
+        for what, loc in (("source", self.source), ("destination", self.dest)):
+            if not _is_remote(loc.strip()) and not loc.lower().startswith("file://") \
+                    and not os.path.isabs(os.path.expanduser(loc.strip())):
+                raise ValueError(f"the {what} must be a full path, e.g. {full_location(loc)!r}")
         if self.mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
         if self.delete_mode not in DELETE_MODES:

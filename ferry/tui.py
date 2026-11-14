@@ -112,8 +112,10 @@ class JobForm(ModalScreen):
     def _collect(self) -> dict:
         q = lambda i: self.query_one(f"#{i}")  # noqa: E731
         d = dict(self.job)
+        from ferry.spec import full_location
         for key in ("name", "source", "dest"):
             d[key] = q(key).value.strip()
+        d["source"], d["dest"] = full_location(d["source"]), full_location(d["dest"])
         for key in ("mode", "delete_mode", "verify"):
             d[key] = q(key).value
         pats = [p.strip() for p in q("exclude").value.split(",") if p.strip()]
