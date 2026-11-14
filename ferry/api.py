@@ -30,6 +30,18 @@ def _mask(cfg: dict) -> dict:
     return c
 
 
+class _FastBindServer(ThreadingHTTPServer):
+    """HTTPServer.server_bind calls socket.getfqdn(), a reverse DNS lookup that can
+    stall for tens of seconds on some machines (macOS especially). We never need it."""
+
+    def server_bind(self):
+        import socketserver
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = host
+        self.server_port = port
+
+
 class ApiServer:
     def __init__(self, daemon):
         self.daemon = daemon
@@ -88,7 +100,7 @@ class ApiServer:
             def do_DELETE(self):
                 self._handle("DELETE")
 
-        self.httpd = ThreadingHTTPServer((host, port), Handler)
+        self.httpd = _FastBindServer((host, port), Handler)
         self.httpd.daemon_threads = True
 
     def serve(self):

@@ -50,7 +50,7 @@ def test_api_runs_and_jobs(daemon, tmp_path):
     r = c.post("/jobs/nightly/run")
     wait_for(lambda: c.get(f"/runs/{r['id']}")["phase"] == "done")
     assert (tmp_path / "d2" / "b" / "c.txt").read_text() == "c"
-    assert c.get("/history")[0]["job_name"] == "nightly"
+    wait_for(lambda: c.get("/history")[0]["job_name"] == "nightly")   # recorded just after "done"
     c.delete(f"/jobs/{job['id']}")
     assert c.get("/jobs") == []
     st = c.get("/status")
