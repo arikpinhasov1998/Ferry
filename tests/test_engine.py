@@ -400,7 +400,13 @@ def test_windows_unreadable_file(tmp_path, src):
                                            | win32security.UNPROTECTED_DACL_SECURITY_INFORMATION,
                                            None, None, old, None)
     if is_elevated():
+        from ferry.metadata import win_open_backup_read
         assert e.failed == 0, "admin should read it with backup rights"
-        assert (tmp_path / "dst" / "a.txt").read_text() == "alpha"
+        copy = tmp_path / "dst" / "a.txt"
+        # the copy keeps the "deny read" permission too, so read it back the same way
+        assert (win32security.ACCESS_DENIED_ACE_TYPE, win32security.ConvertSidToStringSid(me)) \
+            in _win_explicit_sids(copy)
+        with win_open_backup_read(str(copy)) as fh:
+            assert fh.read() == b"alpha"
     else:
         assert e.phase == Phase.PARTIAL and e.failed == 1
