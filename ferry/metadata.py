@@ -81,6 +81,25 @@ if IS_WIN:
             raise ctypes.WinError(ctypes.get_last_error())
         return h
 
+    def win_open_backup_read(path: str):
+        """Open a file for reading with backup semantics (admin only).
+
+        With SeBackupPrivilege enabled this bypasses the file's permissions, the way
+        robocopy /B does, so an administrator can copy files they could not open normally.
+        """
+        import msvcrt
+        win_enable_privileges()
+        # GENERIC_READ, share all, OPEN_EXISTING, BACKUP_SEMANTICS | SEQUENTIAL_SCAN
+        h = _k32.CreateFileW(path, 0x80000000, 0x7, None, 3, 0x02000000 | 0x08000000, None)
+        if h == _INVALID or h is None:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            fd = msvcrt.open_osfhandle(h, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        except Exception:
+            _k32.CloseHandle(h)
+            raise
+        return os.fdopen(fd, "rb")
+
     def win_copy_creation_time(src: str, dst: str):
         ft = ctypes.c_ulonglong()
         h = _open_for_times(src, False)

@@ -318,3 +318,89 @@ def test_sftp_roundtrip(tmp_path, src, sftp_server):
     assert e.phase == Phase.DONE, e.error
     assert tree(back) == tree(src)
 
+
+
+# ------------------------------------------------------------- Windows only --
+def _win_add_ace(path, sid, mask, deny=False):
+    """Add an explicit allow/deny ACE; returns the old security descriptor to restore."""
+    import win32security
+    info = win32security.DACL_SECURITY_INFORMATION
+    old = win32security.GetNamedSecurityInfo(str(path), win32security.SE_FILE_OBJECT, info)
+    dacl = old.GetSecurityDescriptorDacl()
+    new = win32security.ACL()
+    if deny:                                     # deny ACEs must come first
+        new.AddAccessDeniedAce(win32security.ACL_REVISION, mask, sid)
+    for i in range(dacl.GetAceCount()):
+        ace = dacl.GetAce(i)
+        (atype, flags), amask, asid = ace
+        if flags & win32security.INHERITED_ACE:
+            continue
+        if atype == win32security.ACCESS_ALLOWED_ACE_TYPE:
+            new.AddAccessAllowedAceEx(win32security.ACL_REVISION, flags, amask, asid)
+        elif atype == win32security.ACCESS_DENIED_ACE_TYPE:
+            new.AddAccessDeniedAceEx(win32security.ACL_REVISION, flags, amask, asid)
+    if not deny:
+        new.AddAccessAllowedAce(win32security.ACL_REVISION, mask, sid)
+    win32security.SetNamedSecurityInfo(str(path), win32security.SE_FILE_OBJECT,
+                                       info | win32security.UNPROTECTED_DACL_SECURITY_INFORMATION,
+                                       None, None, new, None)
+    return dacl
+
+
+def _win_explicit_sids(path):
+    import win32security
+    sd = win32security.GetNamedSecurityInfo(str(path), win32security.SE_FILE_OBJECT,
+                                            win32security.DACL_SECURITY_INFORMATION)
+    dacl = sd.GetSecurityDescriptorDacl()
+    out = []
+    for i in range(dacl.GetAceCount()):
+        (atype, flags), mask, sid = dacl.GetAce(i)
+        if not flags & win32security.INHERITED_ACE:
+            out.append((atype, win32security.ConvertSidToStringSid(sid)))
+    return out
+
+
+@pytest.mark.skipif(not IS_WIN, reason="Windows attributes and NTFS permissions")
+def test_windows_attributes_and_acl(tmp_path, src):
+    import ntsecuritycon
+    import win32security
+    from ferry.metadata import win_get_attrs, win_set_attrs
+    f = src / "a.txt"
+    everyone = win32security.ConvertStringSidToSid("S-1-1-0")
+    _win_add_ace(f, everyone, ntsecuritycon.FILE_GENERIC_READ)
+    win_set_attrs(str(f), win_get_attrs(str(f)) | 0x2)            # hidden
+    dst = tmp_path / "dst"
+    e = run(tmp_path, src, dst, "1")
+    assert e.phase == Phase.DONE, (e.error, getattr(e, "warnings", None))
+    assert win_get_attrs(str(dst / "a.txt")) & 0x2, "hidden attribute not copied"
+    assert (win32security.ACCESS_ALLOWED_ACE_TYPE, "S-1-1-0") in _win_explicit_sids(dst / "a.txt")
+    dst2 = tmp_path / "dst2"
+    run(tmp_path, src, dst2, "2", metadata={"acl": False})
+    assert (win32security.ACCESS_ALLOWED_ACE_TYPE, "S-1-1-0") not in _win_explicit_sids(dst2 / "a.txt")
+
+
+@pytest.mark.skipif(not IS_WIN, reason="Windows NTFS permissions")
+def test_windows_unreadable_file(tmp_path, src):
+    """A file the user may not read fails for normal users; an admin reads it with backup rights."""
+    import ntsecuritycon
+    import win32api
+    import win32security
+    from ferry.metadata import is_elevated
+    f = src / "a.txt"
+    token = win32security.OpenProcessToken(win32api.GetCurrentProcess(), win32security.TOKEN_QUERY)
+    me = win32security.GetTokenInformation(token, win32security.TokenUser)[0]
+    old = _win_add_ace(f, me, ntsecuritycon.FILE_GENERIC_READ, deny=True)
+    try:
+        with pytest.raises(PermissionError):
+            open(f, "rb").close()
+        e = run(tmp_path, src, tmp_path / "dst")
+    finally:
+        win32security.SetNamedSecurityInfo(str(f), win32security.SE_FILE_OBJECT,
+                                           win32security.DACL_SECURITY_INFORMATION
+                                           | win32security.UNPROTECTED_DACL_SECURITY_INFORMATION,
+                                           None, None, old, None)
+    if is_elevated():
+        assert e.failed == 0, "admin should read it with backup rights"
+        assert (tmp_path / "dst" / "a.txt").read_text() == "alpha"
+    else:
+        assert e.phase == Phase.PARTIAL and e.failed == 1

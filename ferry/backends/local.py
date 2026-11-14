@@ -82,7 +82,17 @@ class LocalBackend(Backend):
         os.makedirs(self.path(rel), exist_ok=True)
 
     def open_read(self, rel: str, offset: int = 0):
-        f = open(self.path(rel), "rb")
+        p = self.path(rel)
+        try:
+            f = open(p, "rb")
+        except PermissionError:
+            # an administrator on Windows may read anything with the backup privilege
+            if os.name != "nt" or not metadata.is_elevated():
+                raise
+            try:
+                f = metadata.win_open_backup_read(p)
+            except OSError:
+                raise PermissionError(13, "Permission denied (also with backup rights)", p) from None
         if offset:
             f.seek(offset)
         return f
