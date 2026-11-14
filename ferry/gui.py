@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
 
 from ferry import __version__
 from ferry.spec import full_location
-from ferry.util import human_bytes, human_duration
+from ferry.util import human_bytes, human_duration, progress_mode
 
 FINAL = {"done", "completed_with_errors", "failed", "cancelled", "interrupted"}
 PHASE = {"pending": "Starting", "scanning": "Scanning", "awaiting_confirmation": "Needs confirmation",
@@ -861,13 +861,23 @@ class MainWindow(QMainWindow):
                 bar.setRange(0, 1000)
                 bar.setTextVisible(True)
                 self.t_runs.setCellWidget(i, 2, bar)
-            bar.setValue(int(r["percent"] * 10))
-            bar.setFormat(f"{r['percent']:.1f}%")
+            mode = progress_mode(r)
+            if mode == "busy":                 # before copying: total unknown -> indeterminate
+                if bar.maximum() != 0:
+                    bar.setRange(0, 0)
+                bar.setFormat("Scanning…" if r["phase"] == "scanning" else "Starting…")
+            else:                              # copying / done -> determinate
+                if bar.maximum() != 1000:
+                    bar.setRange(0, 1000)
+                bar.setValue(int(r["percent"] * 10))
+                bar.setFormat("Waiting for your OK" if mode == "waiting" else f"{r['percent']:.1f}%")
             ph = _phase(r)
+            preparing = mode == "busy"
             self._set_row(self.t_runs, i, [
-                r["job_name"], ph, bar, f"{r['done_files']:,} / {r['total_files']:,}",
-                f"{human_bytes(r['done_bytes'])} / {human_bytes(r['total_bytes'])}",
-                f"{human_bytes(r['speed'])}/s" if r["phase"] not in FINAL else "",
+                r["job_name"], ph, bar,
+                f"{r.get('scanned', 0):,} found" if preparing else f"{r['done_files']:,} / {r['total_files']:,}",
+                "" if preparing else f"{human_bytes(r['done_bytes'])} / {human_bytes(r['total_bytes'])}",
+                f"{human_bytes(r['speed'])}/s" if r["phase"] not in FINAL and not preparing else "",
                 human_duration(r["elapsed"]),
                 human_duration(r["eta"]) if r.get("eta") is not None and r["phase"] not in FINAL else "",
                 r["id"]], {1: phase_color(r["phase"])})

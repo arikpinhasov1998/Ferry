@@ -312,8 +312,8 @@ class TelegramBot:
         lines.append(f"📦 <b>{esc(r['job_name'])}</b> · {esc(r['mode'])}{' (dry run)' if r.get('dry_run') else ''}"
                      f" — {label}")
         lines.append(f"<code>{esc(r['source'])}</code>\n→ <code>{esc(r['dest'])}</code>")
-        if phase == "scanning":
-            lines.append(f"🔎 {r.get('scanned', 0):,} entries scanned")
+        if phase in ("pending", "scanning"):    # not copying yet: no percentage to show
+            lines.append(f"🔎 Getting ready… {r.get('scanned', 0):,} files and folders found so far")
         else:
             pct = r.get("percent", 0)
             lines.append(f"{progress_bar(pct / 100, 16)} {pct:.1f}%")

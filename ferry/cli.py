@@ -22,7 +22,7 @@ import time
 from datetime import datetime
 
 from ferry import __version__
-from ferry.util import human_bytes, human_duration, progress_bar
+from ferry.util import busy_bar, human_bytes, human_duration, progress_bar, progress_mode
 
 SUBCOMMANDS = {"copy", "mirror", "move", "robo", "job", "jobs", "status", "runs", "history", "pause", "resume",
                "cancel", "confirm", "errors", "log", "daemon", "service", "shortcut", "telegram", "config", "tui", "gui",
@@ -155,8 +155,10 @@ def render_line(info: dict, width: int) -> str:
         phase = "paused"
     elif info.get("waiting_window") and phase not in FINAL:
         phase = "waiting for time window"
-    if info["phase"] == "scanning":
-        s = f"scanning… {info.get('scanned', 0):,} entries · {human_duration(info['elapsed'])}"
+    if progress_mode(info) == "busy":      # before copying: total unknown -> indeterminate bar
+        what = "scanning…" if info["phase"] == "scanning" else "starting…"
+        s = (f"{busy_bar(20)} {what} {info.get('scanned', 0):,} found "
+             f"⏱ {human_duration(info['elapsed'])} [{phase}]")
     else:
         eta = info.get("eta")
         s = (f"{progress_bar(info['percent'] / 100, 20)} {info['percent']:5.1f}% "

@@ -12,7 +12,7 @@ from textual.screen import ModalScreen
 from textual.widgets import (Button, Checkbox, DataTable, Footer, Header, Input, Label, RichLog, Select, Static,
                              TabbedContent, TabPane)
 
-from ferry.util import human_bytes, human_duration, progress_bar
+from ferry.util import busy_bar, human_bytes, human_duration, progress_bar, progress_mode
 
 FINAL = {"done", "completed_with_errors", "failed", "cancelled", "interrupted"}
 PHASE = {"pending": "starting", "scanning": "scanning", "awaiting_confirmation": "NEEDS CONFIRM",
@@ -233,6 +233,7 @@ class FerryTUI(App):
                                                        "Failed", "Run")
         self.refresh_data()
         self.set_interval(1.0, self.refresh_data)
+        self.set_interval(0.25, self._animate)
 
     # ------------------------------------------------------------ theme --
     def _apply_theme(self):
@@ -250,6 +251,31 @@ class FerryTUI(App):
             pass
 
     # ------------------------------------------------------------- data --
+    def _render_runs(self, runs):
+        rows = []
+        for r in sorted(runs, key=lambda r: (r["phase"] in FINAL, -float(r.get("started") or 0))):
+            mode = progress_mode(r)
+            if mode == "busy":           # before copying: indeterminate (bouncing) bar
+                bar = f"{busy_bar(12)} {'scan' if r['phase'] == 'scanning' else 'start':>5}"
+                files, data = f"{r.get('scanned', 0):,} found", ""
+            else:
+                bar = f"{progress_bar(r['percent'] / 100, 12)} {r['percent']:5.1f}%"
+                files = f"{r['done_files']:,}/{r['total_files']:,}"
+                data = f"{human_bytes(r['done_bytes'])}/{human_bytes(r['total_bytes'])}"
+            rows.append((r["id"], (
+                r["job_name"][:24], _phase(r), bar, files, data,
+                f"{human_bytes(r['speed'])}/s" if r["phase"] not in FINAL and mode == "percent" else "",
+                human_duration(r["elapsed"]),
+                human_duration(r["eta"]) if r.get("eta") is not None and r["phase"] not in FINAL else "",
+                r["id"])))
+        self.query_one("#runs", Table).set_rows(rows)
+
+    def _animate(self):
+        """Move the indeterminate bars smoothly between data refreshes."""
+        runs = list(getattr(self, "_runs", {}).values())
+        if any(progress_mode(r) == "busy" for r in runs):
+            self._render_runs(runs)
+
     def refresh_data(self):
         try:
             st = self.client.get("/status")
@@ -261,19 +287,7 @@ class FerryTUI(App):
         self.status = st
         self.sub_title = (f"{st['machine']} · {len(st['active'])} active · {st['jobs']} jobs · "
                           f"Telegram {'on' if st['telegram'] else 'off'}")
-        runs = sorted(runs, key=lambda r: (r["phase"] in FINAL, r["id"]), reverse=False)
-        rows = []
-        for r in sorted(runs, key=lambda r: (r["phase"] in FINAL, -float(r.get("started") or 0))):
-            rows.append((r["id"], (
-                r["job_name"][:24], _phase(r),
-                f"{progress_bar(r['percent'] / 100, 12)} {r['percent']:5.1f}%",
-                f"{r['done_files']:,}/{r['total_files']:,}",
-                f"{human_bytes(r['done_bytes'])}/{human_bytes(r['total_bytes'])}",
-                f"{human_bytes(r['speed'])}/s" if r["phase"] not in FINAL else "",
-                human_duration(r["elapsed"]),
-                human_duration(r["eta"]) if r.get("eta") is not None and r["phase"] not in FINAL else "",
-                r["id"])))
-        self.query_one("#runs", Table).set_rows(rows)
+        self._render_runs(runs)
         self._runs = {r["id"]: r for r in runs}
         self._update_details()
         self.query_one("#jobs", Table).set_rows([(j["id"], (

@@ -8,6 +8,10 @@
   A bolder version is used at small sizes (16–32 px) so it stays readable.
 - **Start menu / app menu shortcut**: Settings → *Add to Start menu* (Windows) / *Add to app menu* (Linux), or
   `ferry shortcut install|uninstall|status`.
+- **Progress bars are indeterminate until copying starts**: while starting and scanning (when the total is not
+  known yet) the bar moves back and forth and shows how many files were found; once copying begins it shows the
+  real percentage. Same in the desktop app, terminal app, command line and Telegram. Speed is hidden until
+  copying starts, and a run waiting for your OK shows a still bar.
 - Telegram setup: **Save bot picture…** to give your bot Ferry's icon via @BotFather's `/setuserpic`.
 - README logo; `packaging/make_icons.py` renders every icon file from `ferry/assets/ferry.svg`, and
   `packaging/screenshots.py` regenerates the documentation screenshots.

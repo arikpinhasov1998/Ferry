@@ -157,6 +157,12 @@ Open `ferry-gui`. The window has a **toolbar** at the top, four **tabs**, and a 
 Every run that is happening now, plus the latest finished ones. Columns: job name, state, progress bar, files
 done/total, data done/total, speed, time elapsed, **time left**, and the run's ID.
 
+**The progress bar:** before copying starts, while Ferry is *starting* and *scanning* the folders to find out
+what to copy, the bar moves back and forth because the total isn't known yet; the Files column counts how many
+files were found so far. As soon as copying begins, the bar shows the real percentage. While a run waits for your
+OK the bar stands still with "Waiting for your OK". (The terminal app, the command line and Telegram behave the
+same way.)
+
 Click a run to see details underneath: where from and to, how many files were copied, unchanged, failed and
 removed, the **elapsed time and time left**, and which files are being copied right now.
 
@@ -300,7 +306,12 @@ While it runs you see a live line:
 ███████░░░░░░░░░░░░░  37.5% 5.7 MB/15.3 MB 15/40 files 1.5 MB/s ⏱ 4s ⏳ 6s [copying]
 ```
 
-(progress, data, files, speed, ⏱ time elapsed, ⏳ time left). At the end you get a summary:
+(progress, data, files, speed, ⏱ time elapsed, ⏳ time left). Before copying starts, while Ferry scans the
+folders, a block bounces back and forth instead and you see how many files were found:
+
+```
+░░░░░░░░░░░█████░░░░ scanning… 53,120 found ⏱ 3s [scanning]
+``` At the end you get a summary:
 
 ```
 Result: done

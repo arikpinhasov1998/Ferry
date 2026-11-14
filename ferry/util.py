@@ -69,6 +69,36 @@ def progress_bar(fraction: float, width: int = 20) -> str:
     return "█" * full + "░" * (width - full)
 
 
+PREPARING_PHASES = ("pending", "scanning")
+
+
+def progress_mode(info: dict) -> str:
+    """How to draw a run's progress bar.
+
+    "busy"    - not copying yet (starting / scanning: the total isn't known) -> indeterminate bar
+    "waiting" - planned, but waiting for the user's OK -> empty, still bar
+    "percent" - copying or finished -> determinate bar
+    """
+    phase = info.get("phase")
+    if phase in PREPARING_PHASES:
+        return "busy"
+    if phase == "awaiting_confirmation":
+        return "waiting"
+    return "percent"
+
+
+def busy_bar(width: int = 20, now: float | None = None) -> str:
+    """Text indeterminate bar: a block bouncing left and right (changes every 1/8 s)."""
+    import time as _time
+    block = max(3, width // 4)
+    span = width - block
+    if span <= 0:
+        return "█" * width
+    step = int((_time.time() if now is None else now) * 8) % (2 * span)
+    pos = step if step <= span else 2 * span - step
+    return "░" * pos + "█" * block + "░" * (width - block - pos)
+
+
 _DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 
