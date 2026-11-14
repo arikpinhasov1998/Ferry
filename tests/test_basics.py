@@ -117,7 +117,7 @@ def test_full_location_and_relative_paths_rejected(tmp_path, monkeypatch):
     from ferry.spec import JobSpec, full_location
     monkeypatch.chdir(tmp_path)
     assert full_location("Photos") == str(tmp_path / "Photos")
-    assert full_location("~/x") == os.path.expanduser("~/x")
+    assert full_location("~/x") == os.path.abspath(os.path.expanduser("~/x"))
     for remote in ("sftp://me@host/data", "gdrive:Backup/Docs"):
         assert full_location(remote) == remote
     with pytest.raises(ValueError, match="full path"):
