@@ -123,3 +123,15 @@ def test_full_location_and_relative_paths_rejected(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="full path"):
         JobSpec.from_dict({"source": "Photos", "dest": str(tmp_path / "b")}).validate()
     JobSpec.from_dict({"source": full_location("Photos"), "dest": "gdrive:b"}).validate()
+
+
+def test_theme_setting_and_terminal_guess(monkeypatch):
+    from ferry.config import Config
+    from ferry.tui import terminal_is_dark
+    assert Config().get("ui.theme") == "system"
+    monkeypatch.setenv("COLORFGBG", "0;15")
+    assert terminal_is_dark() is False
+    monkeypatch.setenv("COLORFGBG", "15;0")
+    assert terminal_is_dark() is True
+    monkeypatch.delenv("COLORFGBG")
+    assert terminal_is_dark() is True

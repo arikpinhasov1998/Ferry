@@ -35,6 +35,7 @@ DEFAULTS = {
     "defaults": {"threads": 8, "retries": 3, "retry_wait": 5},
     "auto_resume": True,            # resume interrupted runs when the daemon starts
     "history_keep": 200,
+    "ui": {"theme": "system"},      # desktop app and terminal UI: system | light | dark
 }
 
 

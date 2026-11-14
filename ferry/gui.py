@@ -6,7 +6,8 @@ import threading
 from datetime import datetime
 
 from PySide6.QtCore import QObject, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPainterPath, QPixmap
+from PySide6.QtGui import (QAction, QColor, QFont, QGuiApplication, QIcon, QPainter, QPainterPath, QPalette,
+                           QPixmap)
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
@@ -23,8 +24,82 @@ PHASE = {"pending": "Starting", "scanning": "Scanning", "awaiting_confirmation":
          "copying": "Copying", "deleting": "Cleaning up", "finishing": "Finishing", "done": "Done",
          "completed_with_errors": "Done with errors", "failed": "Failed", "cancelled": "Cancelled",
          "interrupted": "Interrupted"}
-PHASE_COLOR = {"done": "#2e7d32", "completed_with_errors": "#ef6c00", "failed": "#c62828",
-               "awaiting_confirmation": "#ef6c00", "cancelled": "#757575"}
+PHASE_ROLE = {"done": "ok", "completed_with_errors": "warn", "failed": "err",
+              "awaiting_confirmation": "warn", "cancelled": "muted"}
+
+# ------------------------------------------------------------------ themes --
+THEMES = ("system", "light", "dark")
+THEME_LABELS = {"system": "Match system", "light": "Light", "dark": "Dark"}
+# status colours readable on each background
+ROLE_COLORS = {
+    "light": {"ok": "#2e7d32", "warn": "#e65100", "err": "#c62828", "muted": "#757575", "accent": "#1565c0"},
+    "dark": {"ok": "#81c784", "warn": "#ffb74d", "err": "#ef9a9a", "muted": "#9e9e9e", "accent": "#64b5f6"},
+}
+_theme = {"mode": "system", "effective": "light"}
+
+
+def _system_is_dark() -> bool:
+    app = QGuiApplication.instance()
+    try:
+        return app.styleHints().colorScheme() == Qt.ColorScheme.Dark
+    except AttributeError:          # Qt < 6.5: guess from the default palette
+        return app.palette().color(QPalette.Window).lightness() < 128
+
+
+def _palette(dark: bool) -> QPalette:
+    p = QPalette()
+    if dark:
+        c = {"window": "#1f2023", "base": "#2b2d31", "alt": "#303237", "text": "#e8eaed", "button": "#383a40",
+             "mid": "#55585f", "dis": "#8a8f96", "hl": "#1a73e8", "link": "#8ab4f8", "tip": "#383a40"}
+    else:
+        c = {"window": "#f3f4f6", "base": "#ffffff", "alt": "#f7f8fa", "text": "#1f2328", "button": "#fafbfc",
+             "mid": "#c9ccd1", "dis": "#9aa0a6", "hl": "#1a73e8", "link": "#1565c0", "tip": "#ffffff"}
+    Q = QColor
+    for group in (QPalette.Active, QPalette.Inactive, QPalette.Disabled):
+        dis = group == QPalette.Disabled
+        txt = Q(c["dis"] if dis else c["text"])
+        p.setColor(group, QPalette.Window, Q(c["window"]))
+        p.setColor(group, QPalette.WindowText, txt)
+        p.setColor(group, QPalette.Base, Q(c["base"]))
+        p.setColor(group, QPalette.AlternateBase, Q(c["alt"]))
+        p.setColor(group, QPalette.Text, txt)
+        p.setColor(group, QPalette.Button, Q(c["button"]))
+        p.setColor(group, QPalette.ButtonText, txt)
+        p.setColor(group, QPalette.ToolTipBase, Q(c["tip"]))
+        p.setColor(group, QPalette.ToolTipText, Q(c["text"]))
+        p.setColor(group, QPalette.PlaceholderText, Q(c["dis"]))
+        p.setColor(group, QPalette.Highlight, Q(c["mid"] if dis else c["hl"]))
+        p.setColor(group, QPalette.HighlightedText, Q("#ffffff"))
+        p.setColor(group, QPalette.Link, Q(c["link"]))
+        p.setColor(group, QPalette.Light, Q(c["button"]).lighter(130))
+        p.setColor(group, QPalette.Midlight, Q(c["mid"]).lighter(115))
+        p.setColor(group, QPalette.Mid, Q(c["mid"]))
+        p.setColor(group, QPalette.Dark, Q(c["mid"]).darker(150))
+        p.setColor(group, QPalette.Shadow, Q("#000000"))
+    return p
+
+
+def apply_theme(mode: str = None) -> str:
+    """Apply 'system', 'light' or 'dark'. Returns the effective look ('light'/'dark')."""
+    app = QApplication.instance()
+    mode = mode if mode in THEMES else _theme["mode"]
+    _theme["mode"] = mode
+    dark = _system_is_dark() if mode == "system" else mode == "dark"
+    _theme["effective"] = "dark" if dark else "light"
+    app.setStyle("Fusion")              # the same look, and proper dark mode, on every OS
+    app.setPalette(_palette(dark))
+    for w in app.topLevelWidgets():
+        if hasattr(w, "on_theme_changed"):
+            w.on_theme_changed()
+    return _theme["effective"]
+
+
+def color(role: str) -> str:
+    return ROLE_COLORS[_theme["effective"]][role]
+
+
+def phase_color(phase: str) -> str:
+    return color(PHASE_ROLE.get(phase, "accent"))
 
 
 def app_icon() -> QIcon:
@@ -349,7 +424,7 @@ class TelegramSetupDialog(QDialog):
         from ferry.telegram import TelegramApi
         tok = self.token.text().strip()
         if ":" not in tok:
-            self.token_status.setText("<span style='color:#c62828'>That doesn't look like a bot token "
+            self.token_status.setText(f"<span style='color:{color('err')}'>That doesn't look like a bot token "
                                       "(it has the form 123456789:AA…).</span>")
             return
         self._stop_polling()
@@ -402,7 +477,7 @@ class TelegramSetupDialog(QDialog):
         if kind == "me":
             self.bot = data.get("username")
             self.check_btn.setEnabled(True)
-            self.token_status.setText(f"<span style='color:#2e7d32'>✓ Token works: bot "
+            self.token_status.setText(f"<span style='color:{color('ok')}'>✓ Token works: bot "
                                       f"<b>@{esc_html(self.bot)}</b> ({esc_html(data.get('first_name', ''))})</span>")
             self.step2_text.setText(
                 f'Open <a href="https://t.me/{self.bot}">t.me/{self.bot}</a> on your phone or computer and press '
@@ -415,10 +490,10 @@ class TelegramSetupDialog(QDialog):
             self.check_btn.setEnabled(True)
             msg = ("Telegram rejected this token. Copy it again from @BotFather."
                    if getattr(data, "code", None) == 401 else f"Could not reach Telegram: {data}")
-            self.token_status.setText(f"<span style='color:#c62828'>✗ {esc_html(msg)}</span>")
+            self.token_status.setText(f"<span style='color:{color('err')}'>✗ {esc_html(msg)}</span>")
         elif kind == "poll_error":
             code = getattr(data, "code", None)
-            self.waiting.setText("<i style='color:#ef6c00'>" + esc_html(
+            self.waiting.setText(f"<i style='color:{color('warn')}'>" + esc_html(
                 "Another program is using this bot (each machine needs its own bot)" if code == 409
                 else f"Telegram not reachable, retrying… ({data})") + "</i>")
         elif kind == "msg":
@@ -581,6 +656,17 @@ class MainWindow(QMainWindow):
     def _build_settings(self):
         w = QWidget()
         lay = QVBoxLayout(w)
+        g = QGroupBox("Appearance")
+        hl = QHBoxLayout(g)
+        hl.addWidget(QLabel("Theme"))
+        self.s_theme = QComboBox()
+        for t in THEMES:
+            self.s_theme.addItem(THEME_LABELS[t], t)
+        self.s_theme.setToolTip("“Match system” follows your computer's light/dark setting, also when it changes.")
+        self.s_theme.currentIndexChanged.connect(self.change_theme)
+        hl.addWidget(self.s_theme)
+        hl.addStretch(1)
+        lay.addWidget(g)
         g = QGroupBox("Telegram bot")
         fl = QFormLayout(g)
         top = QHBoxLayout()
@@ -759,7 +845,7 @@ class MainWindow(QMainWindow):
                 f"{human_bytes(r['speed'])}/s" if r["phase"] not in FINAL else "",
                 human_duration(r["elapsed"]),
                 human_duration(r["eta"]) if r.get("eta") is not None and r["phase"] not in FINAL else "",
-                r["id"]], {1: PHASE_COLOR.get(r["phase"], "#1565c0")})
+                r["id"]], {1: phase_color(r["phase"])})
             self._notify_change(r)
         self.runs = {r["id"]: r for r in runs}
         if selected:
@@ -788,7 +874,7 @@ class MainWindow(QMainWindow):
                 self._set_row(self.t_hist, i, [when, h["job_name"], PHASE.get(h["phase"], h["phase"]),
                                                f"{h['done_files']:,}", human_bytes(h["done_bytes"]),
                                                human_duration(h["elapsed"]), h.get("failed") or "", h["id"]],
-                              {2: PHASE_COLOR.get(h["phase"], "#000")})
+                              {2: phase_color(h["phase"])})
         self._update_actions()
 
     def _notify_change(self, r):
@@ -836,7 +922,7 @@ class MainWindow(QMainWindow):
             return
         import html
         e = html.escape
-        out = [f"<h3>{e(r['job_name'])} <span style='color:{PHASE_COLOR.get(r['phase'], '#1565c0')}'>"
+        out = [f"<h3>{e(r['job_name'])} <span style='color:{phase_color(r['phase'])}'>"
                f"— {e(_phase(r))}</span></h3>",
                f"<p><b>{e(r['source'])}</b> → <b>{e(r['dest'])}</b> ({e(r['mode'])})</p>",
                f"<p>Copied {r['done_files']:,} of {r['total_files']:,} files · {human_bytes(r['done_bytes'])} of "
@@ -847,7 +933,7 @@ class MainWindow(QMainWindow):
         out[-1] += "</p>"
         pc = r.get("pending_confirmation")
         if pc:
-            out.append(f"<p style='color:#ef6c00'><b>Waiting for your OK:</b> {pc['deletes']:,} deletions, "
+            out.append(f"<p style='color:{color('warn')}'><b>Waiting for your OK:</b> {pc['deletes']:,} deletions, "
                        f"{pc['overwrites']:,} overwrites. Use <b>Confirm…</b> in the toolbar.</p><ul>"
                        + "".join(f"<li>{e(s)}</li>" for s in pc.get("sample", [])[:10]) + "</ul>")
         if r.get("current"):
@@ -855,9 +941,9 @@ class MainWindow(QMainWindow):
                 f"<li>{e(c['path'])} — {c['done'] * 100 // max(1, c['size'])}% of {human_bytes(c['size'])}</li>"
                 for c in r["current"][:8]) + "</ul>")
         for w in r.get("warnings") or []:
-            out.append(f"<p style='color:#ef6c00'>⚠ {e(w['message'])}</p>")
+            out.append(f"<p style='color:{color('warn')}'>⚠ {e(w['message'])}</p>")
         if r.get("error"):
-            out.append(f"<p style='color:#c62828'><b>Error:</b> {e(r['error'])}</p>")
+            out.append(f"<p style='color:{color('err')}'><b>Error:</b> {e(r['error'])}</p>")
         html_text = "".join(out)
         if getattr(self, "_last_details", None) != html_text:
             self._last_details = html_text
@@ -961,6 +1047,9 @@ class MainWindow(QMainWindow):
             return
         tg = cfg["telegram"]
         self._tg_cfg = tg
+        self.s_theme.blockSignals(True)
+        self.s_theme.setCurrentIndex(max(0, THEMES.index(_theme["mode"]) if _theme["mode"] in THEMES else 0))
+        self.s_theme.blockSignals(False)
         self._update_tg_state()
         self.s_machine.setText(cfg.get("machine_name", ""))
         self.s_tg_enabled.setChecked(tg["enabled"])
@@ -1009,25 +1098,37 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Settings saved", 4000)
             self.load_settings()
 
+    def change_theme(self, *_):
+        mode = self.s_theme.currentData()
+        if mode == _theme["mode"]:
+            return
+        apply_theme(mode)
+        self._call(lambda: self.client.post("/config", {"ui.theme": mode}))
+
+    def on_theme_changed(self):
+        self.update_details()
+        self._update_tg_state()
+        self.refresh()
+
     def _update_tg_state(self):
         st = getattr(self, "_tg_status", None) or {}
         cfg = getattr(self, "_tg_cfg", None) or {}
         bot = st.get("telegram_bot")
         link = f' <a href="https://t.me/{bot}">@{bot}</a>' if bot else ""
         if not cfg.get("token"):
-            text, color = "Not set up. Press “Set up bot…” to control Ferry from your phone.", "#757575"
+            text, col = "Not set up. Press “Set up bot…” to control Ferry from your phone.", color("muted")
         elif not cfg.get("enabled"):
-            text, color = "Bot is turned off.", "#757575"
+            text, col = "Bot is turned off.", color("muted")
         elif st.get("telegram"):
             n = len(cfg.get("allowed_ids") or [])
-            text, color = f"● Connected{link} · {n} allowed user(s)/group(s)", "#2e7d32"
+            text, col = f"● Connected{link} · {n} allowed user(s)/group(s)", color("ok")
             if not n:
-                text, color = f"● Connected{link}, but nobody is allowed yet: add your ID below", "#ef6c00"
+                text, col = f"● Connected{link}, but nobody is allowed yet: add your ID below", color("warn")
         elif st.get("telegram_error"):
-            text, color = f"✗ {esc_html(st['telegram_error'])}", "#c62828"
+            text, col = f"✗ {esc_html(st['telegram_error'])}", color("err")
         else:
-            text, color = "Connecting…", "#ef6c00"
-        html = f"<span style='color:{color}'>{text}</span>"
+            text, col = "Connecting…", color("warn")
+        html = f"<span style='color:{col}'>{text}</span>"
         if self.s_tg_state.text() != html:
             self.s_tg_state.setText(html)
         self.s_tg_disconnect.setEnabled(bool(cfg.get("token")))
@@ -1079,6 +1180,15 @@ def main() -> int:
     except Exception as e:
         QMessageBox.critical(None, "Ferry", f"Could not start the background service:\n{e}")
         return 2
+    try:
+        mode = (client.get("/config").get("ui") or {}).get("theme", "system")
+    except Exception:
+        mode = "system"
+    apply_theme(mode)
+    try:   # follow the computer's light/dark switch while "Match system" is chosen
+        app.styleHints().colorSchemeChanged.connect(lambda *_: _theme["mode"] == "system" and apply_theme())
+    except AttributeError:
+        pass
     w = MainWindow(client)
     w.show()
     if not w.tray:

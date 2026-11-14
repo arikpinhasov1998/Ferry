@@ -138,10 +138,10 @@ class JobForm(ModalScreen):
             return self.dismiss(None)
         d = self._collect()
         if not d.get("source") or not d.get("dest"):
-            self.query_one("#msg", Static).update("[red]Source and destination are required[/red]")
+            self.query_one("#msg", Static).update("[$error]Source and destination are required[/]")
             return
         if ev.button.id == "save" and not d.get("name"):
-            self.query_one("#msg", Static).update("[red]Give the job a name to save it[/red]")
+            self.query_one("#msg", Static).update("[$error]Give the job a name to save it[/]")
             return
         self.dismiss((ev.button.id, d))
 
@@ -169,6 +169,16 @@ class TextView(ModalScreen):
             log.write(line)
 
 
+def terminal_is_dark() -> bool:
+    """Best guess whether the terminal has a dark background (most do).
+
+    Many terminals export COLORFGBG="foreground;background"; background 7 or 15 = light.
+    """
+    import os
+    bg = os.environ.get("COLORFGBG", "").split(";")[-1]
+    return not (bg.isdigit() and int(bg) in (7, 15))
+
+
 class FerryTUI(App):
     TITLE = "Ferry"
     CSS = """
@@ -186,6 +196,7 @@ class FerryTUI(App):
         Binding("l", "log", "Log"),
         Binding("e", "edit", "Edit job"),
         Binding("delete", "delete_job", "Delete job"),
+        Binding("t", "toggle_theme", "Theme"),
         Binding("q", "quit", "Quit"),
     ]
 
@@ -207,6 +218,11 @@ class FerryTUI(App):
         yield Footer()
 
     def on_mount(self):
+        try:
+            self.theme_mode = (self.client.get("/config").get("ui") or {}).get("theme", "system")
+        except Exception:
+            self.theme_mode = "system"
+        self._apply_theme()
         runs = self.query_one("#runs", Table)
         for label, width in (("Job", 22), ("State", 15), ("Progress", 21), ("Files", 17), ("Data", 21),
                              ("Speed", 11), ("Elapsed", 11), ("Left", 11), ("Run", 21)):
@@ -217,6 +233,21 @@ class FerryTUI(App):
                                                        "Failed", "Run")
         self.refresh_data()
         self.set_interval(1.0, self.refresh_data)
+
+    # ------------------------------------------------------------ theme --
+    def _apply_theme(self):
+        dark = terminal_is_dark() if self.theme_mode == "system" else self.theme_mode == "dark"
+        self.theme = "textual-dark" if dark else "textual-light"
+
+    def action_toggle_theme(self):
+        order = ["system", "light", "dark"]
+        self.theme_mode = order[(order.index(self.theme_mode) + 1) % 3 if self.theme_mode in order else 0]
+        self._apply_theme()
+        self.notify(f"Theme: {'match terminal' if self.theme_mode == 'system' else self.theme_mode}", timeout=2)
+        try:
+            self.client.post("/config", {"ui.theme": self.theme_mode})
+        except Exception:
+            pass
 
     # ------------------------------------------------------------- data --
     def refresh_data(self):
@@ -266,7 +297,7 @@ class FerryTUI(App):
         lines = [f"[b]{r['job_name']}[/b] ({r['mode']}) {r['source']} → {r['dest']}"]
         pc = r.get("pending_confirmation")
         if pc:
-            lines.append(f"[yellow b]Waiting for confirmation:[/] {pc['deletes']} deletions, {pc['overwrites']} "
+            lines.append(f"[b $warning]Waiting for confirmation:[/] {pc['deletes']} deletions, {pc['overwrites']} "
                          f"overwrites — [b]y[/b] apply all, [b]s[/b] skip them, [b]c[/b] cancel")
             lines += [f"   {s}" for s in pc.get("sample", [])[:6]]
         lines.append(f"unchanged {r.get('same_files', 0):,} · failed {r.get('failed', 0):,} · "
@@ -276,9 +307,9 @@ class FerryTUI(App):
             pct = c["done"] * 100 // max(1, c["size"])
             lines.append(f"   ⇢ {c['path']}  {pct}% of {human_bytes(c['size'])}")
         for w in (r.get("warnings") or [])[:3]:
-            lines.append(f"[yellow]⚠ {w['message']}[/]")
+            lines.append(f"[$warning]⚠ {w['message']}[/]")
         if r.get("error"):
-            lines.append(f"[red]{r['error']}[/]")
+            lines.append(f"[$error]{r['error']}[/]")
         self.query_one("#details", Static).update("\n".join(lines))
 
     @on(DataTable.RowHighlighted, "#runs")
