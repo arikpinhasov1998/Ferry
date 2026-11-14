@@ -899,6 +899,8 @@ log and plan), `logs/` (the helper's own logs), `known_hosts` (SFTP server finge
 | macOS says it can't be opened | Right-click → **Open**, or System Settings → Privacy & Security → **Allow Anyway** |
 | Linux: "permission denied" | `chmod +x ferry ferry-gui` |
 | Linux: the desktop app doesn't open | Install Qt's helpers: `sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libegl1` (Debian/Ubuntu). Or use `ferry tui`. |
+| Linux: the dock shows a gear instead of Ferry's icon | Start Ferry once with version 1.2 or newer (it registers its icon automatically), or use Settings → **Add to app menu**. |
+| "Match system" theme doesn't follow the desktop | Linux: needs the desktop's settings portal (`xdg-desktop-portal`, installed on GNOME/KDE by default). Or pick Light/Dark directly. |
 | "background service unavailable" / port busy | `ferry daemon restart`. Still stuck? Look in the `logs` folder inside `ferry config path`. |
 | Files are copied again every time | The destination may round times (FAT/exFAT, some NAS): add `--modify-window 2`. Or use `--overwrite checksum` once. |
 | Some files failed | `ferry errors RUN` (or the Errors button). Usually: file in use, no permission, or disk full. Run again — only the missing files are copied. |

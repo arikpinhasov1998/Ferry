@@ -1,6 +1,7 @@
 """Desktop window (Qt) with tray icon. Talks to the background service."""
 from __future__ import annotations
 
+import os
 import sys
 import threading
 from datetime import datetime
@@ -38,12 +39,63 @@ ROLE_COLORS = {
 _theme = {"mode": "system", "effective": "light"}
 
 
+def _portal_color_scheme() -> int | None:
+    """Linux: the desktop's light/dark preference from the XDG settings portal (GNOME, KDE, …).
+
+    1 = prefer dark, 2 = prefer light, 0 = no preference, None = unavailable. Asked directly because
+    Qt's GTK theme plugin can't read it inside the portable build (its bundled GLib can't load the
+    system's GSettings modules, so GTK silently falls back to "light").
+    """
+    if not sys.platform.startswith("linux"):
+        return None
+    try:
+        from PySide6.QtDBus import QDBusConnection, QDBusInterface, QDBusMessage, QDBusVariant
+    except ImportError:
+        return None
+    try:
+        iface = QDBusInterface("org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
+                               "org.freedesktop.portal.Settings", QDBusConnection.sessionBus())
+        if not iface.isValid():
+            return None
+        iface.setTimeout(1000)
+        for method in ("ReadOne", "Read"):              # Read = older portals (nested variant)
+            reply = iface.call(method, "org.freedesktop.appearance", "color-scheme")
+            if reply.type() == QDBusMessage.ErrorMessage or not reply.arguments():
+                continue
+            value = reply.arguments()[0]
+            while isinstance(value, QDBusVariant):
+                value = value.variant()
+            if isinstance(value, int):
+                return value
+    except Exception:
+        return None
+    return None
+
+
 def _system_is_dark() -> bool:
+    portal = _portal_color_scheme()
+    if portal in (1, 2):
+        return portal == 1
     app = QGuiApplication.instance()
     try:
-        return app.styleHints().colorScheme() == Qt.ColorScheme.Dark
-    except AttributeError:          # Qt < 6.5: guess from the default palette
-        return app.palette().color(QPalette.Window).lightness() < 128
+        scheme = app.styleHints().colorScheme()
+        if scheme != Qt.ColorScheme.Unknown:
+            return scheme == Qt.ColorScheme.Dark
+    except AttributeError:          # Qt < 6.5
+        pass
+    if sys.platform.startswith("linux"):    # last resort: GNOME's own setting or a "-dark" GTK theme
+        try:
+            import subprocess
+            out = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
+                                 capture_output=True, text=True, timeout=2).stdout
+            if "dark" in out or "light" in out:
+                return "dark" in out
+            out = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", "gtk-theme"],
+                                 capture_output=True, text=True, timeout=2).stdout
+            return "dark" in out.lower()
+        except Exception:
+            pass
+    return app.palette().color(QPalette.Window).lightness() < 128
 
 
 def _palette(dark: bool) -> QPalette:
@@ -86,12 +138,30 @@ def apply_theme(mode: str = None) -> str:
     _theme["mode"] = mode
     dark = _system_is_dark() if mode == "system" else mode == "dark"
     _theme["effective"] = "dark" if dark else "light"
+    if os.environ.get("FERRY_DEBUG_THEME"):
+        print(f"theme: mode={mode} portal={_portal_color_scheme()} effective={_theme['effective']}", file=sys.stderr)
     app.setStyle("Fusion")              # the same look, and proper dark mode, on every OS
     app.setPalette(_palette(dark))
     for w in app.topLevelWidgets():
         if hasattr(w, "on_theme_changed"):
             w.on_theme_changed()
     return _theme["effective"]
+
+
+def follow_system_theme(app) -> None:
+    """Switch light/dark live when the computer does, while "Match system" is chosen."""
+    def check(*_):
+        if _theme["mode"] == "system" and ("dark" if _system_is_dark() else "light") != _theme["effective"]:
+            apply_theme()
+    try:
+        app.styleHints().colorSchemeChanged.connect(check)
+    except AttributeError:
+        pass
+    # Qt's signal doesn't fire everywhere (e.g. GNOME with the portable build): also look every 2 s
+    timer = QTimer(app)
+    timer.timeout.connect(check)
+    timer.start(2000)
+    app._ferry_theme_timer = timer
 
 
 def color(role: str) -> str:
@@ -1218,10 +1288,17 @@ class MainWindow(QMainWindow):
 
 
 def main() -> int:
+    # Linux: "ferry" becomes the window's app id (Wayland) / class (X11); the dock then uses the icon of
+    # ferry.desktop. Wayland docks ignore a window's own icon, so register that entry (hidden) first.
+    QGuiApplication.setDesktopFileName("ferry")
+    try:
+        from ferry.shortcut import ensure_linux_icon
+        ensure_linux_icon()
+    except Exception:
+        pass
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("Ferry")
     app.setWindowIcon(app_icon())
-    app.setDesktopFileName("ferry")     # Linux: match ferry.desktop so the taskbar shows the icon
     app.setQuitOnLastWindowClosed(False)
     try:
         from ferry.daemon import ensure_daemon
@@ -1234,10 +1311,7 @@ def main() -> int:
     except Exception:
         mode = "system"
     apply_theme(mode)
-    try:   # follow the computer's light/dark switch while "Match system" is chosen
-        app.styleHints().colorSchemeChanged.connect(lambda *_: _theme["mode"] == "system" and apply_theme())
-    except AttributeError:
-        pass
+    follow_system_theme(app)
     w = MainWindow(client)
     w.show()
     if not w.tray:

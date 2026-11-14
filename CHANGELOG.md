@@ -16,6 +16,14 @@
 - README logo; `packaging/make_icons.py` renders every icon file from `ferry/assets/ferry.svg`, and
   `packaging/screenshots.py` regenerates the documentation screenshots.
 
+### Fixed
+- **"Match system" theme on Linux** showed light even when the desktop was dark: inside the portable build Qt's
+  GTK plugin can't read the desktop settings. Ferry now asks the desktop's settings portal directly (GNOME, KDE…),
+  with fallbacks, and also notices when you switch while Ferry is open.
+- **Linux dock/taskbar showed a gear instead of Ferry's icon** (Wayland ignores a window's own icon). The desktop
+  app now registers a hidden `ferry.desktop` with the icon when it starts, and keeps it up to date if Ferry is
+  moved; "Add to app menu" makes it visible in the menu.
+
 ## 1.1.0 — 2026-11-14
 
 ### New

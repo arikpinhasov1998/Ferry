@@ -51,7 +51,10 @@ def _linux_paths():
     return data / "applications" / f"{DESKTOP_ID}.desktop", data / "icons" / "hicolor"
 
 
-def _linux_install() -> str:
+def _linux_write(visible: bool) -> Path:
+    """Write ferry.desktop + icons. visible=False keeps it out of the app menu (NoDisplay) but still lets the
+    dock/taskbar find Ferry's icon: on Wayland (GNOME, KDE) a window's own icon is ignored and the
+    compositor only uses the icon of the .desktop file whose name matches the app id ("ferry")."""
     desktop, hicolor = _linux_paths()
     for s in ICON_SIZES:
         d = hicolor / f"{s}x{s}" / "apps"
@@ -73,23 +76,62 @@ def _linux_install() -> str:
         "Terminal=false\n"
         "Categories=Utility;FileTools;\n"
         "Keywords=copy;sync;backup;mirror;robocopy;rsync;\n"
-        f"StartupWMClass={DESKTOP_ID}\n"
-        f"X-Ferry-Version={__version__}\n", encoding="utf-8")
+        + ("" if visible else "NoDisplay=true\n")
+        + f"X-Ferry-Version={__version__}\n", encoding="utf-8")
     desktop.chmod(0o755)
-    for tool in (["update-desktop-database", str(desktop.parent)], ["gtk-update-icon-cache", "-q", str(hicolor)]):
+    for tool in (["update-desktop-database", str(desktop.parent)], ["gtk-update-icon-cache", "-q", "-t", str(hicolor)]):
         if shutil.which(tool[0]):
             subprocess.run(tool, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    return desktop
+
+
+def _linux_install() -> str:
+    desktop = _linux_write(visible=True)
     return f"Added Ferry to your app menu ({desktop})."
 
 
 def _linux_uninstall() -> str:
+    desktop, _ = _linux_paths()
+    if desktop.exists() and "NoDisplay=true" not in desktop.read_text(errors="replace"):
+        _linux_write(visible=False)          # keep the hidden entry so the dock still shows the icon
+        return "Removed Ferry from your app menu."
+    return "Ferry was not in your app menu."
+
+
+def _linux_remove_all():
+    """Remove every trace (used by tests and full uninstall)."""
     desktop, hicolor = _linux_paths()
-    removed = desktop.exists()
     desktop.unlink(missing_ok=True)
     for s in ICON_SIZES:
         (hicolor / f"{s}x{s}" / "apps" / f"{DESKTOP_ID}.png").unlink(missing_ok=True)
     (hicolor / "scalable" / "apps" / f"{DESKTOP_ID}.svg").unlink(missing_ok=True)
-    return "Removed Ferry from your app menu." if removed else "Ferry was not in your app menu."
+
+
+def ensure_linux_icon() -> bool:
+    """Called when the desktop app starts on Linux: make sure the dock can show Ferry's icon.
+
+    Creates a hidden ferry.desktop if there is none, and refreshes ours when Ferry moved or was
+    updated. Leaves a ferry.desktop that someone else wrote alone. Returns True if it wrote one.
+    """
+    if not sys.platform.startswith("linux"):
+        return False
+    desktop, hicolor = _linux_paths()
+    try:
+        if desktop.exists():
+            text = desktop.read_text(errors="replace")
+            if "X-Ferry-Version=" not in text:
+                return False                     # not ours
+            cmd = " ".join(shlex.quote(c) for c in gui_command())
+            fresh = (f"Exec={cmd}\n" in text and f"X-Ferry-Version={__version__}\n" in text
+                     and (hicolor / "256x256" / "apps" / f"{DESKTOP_ID}.png").exists())
+            if fresh:
+                return False
+            _linux_write(visible="NoDisplay=true" not in text)
+            return True
+        _linux_write(visible=False)
+        return True
+    except OSError:
+        return False
 
 
 # -------------------------------------------------------------- Windows ---
@@ -151,4 +193,6 @@ def status() -> tuple[bool, str | None]:
         return False, None
     else:
         p = _linux_paths()[0]
+        if p.exists() and "NoDisplay=true" in p.read_text(errors="replace"):
+            return False, None               # only the hidden icon entry, not in the menu
     return p.exists(), (str(p) if p.exists() else None)

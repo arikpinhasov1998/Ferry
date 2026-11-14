@@ -38,9 +38,29 @@ def test_linux_menu_entry(tmp_path, monkeypatch):
     assert "Icon=ferry" in text and "Exec=" in text and "-m ferry gui" in text
     assert (tmp_path / "icons" / "hicolor" / "256x256" / "apps" / "ferry.png").exists()
     assert (tmp_path / "icons" / "hicolor" / "scalable" / "apps" / "ferry.svg").exists()
-    assert shortcut.status()[0]
-    shortcut.uninstall()
-    assert not desktop.exists() and shortcut.status() == (False, None)
+    assert shortcut.status()[0] and "NoDisplay" not in text
+    shortcut.uninstall()                       # leaves only the hidden entry that gives the dock its icon
+    assert "NoDisplay=true" in desktop.read_text() and shortcut.status() == (False, None)
+    shortcut._linux_remove_all()
+    assert not desktop.exists()
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux dock icon")
+def test_linux_dock_icon_entry_is_created_hidden_and_kept_fresh(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    desktop = tmp_path / "applications" / "ferry.desktop"
+    assert shortcut.ensure_linux_icon() is True
+    text = desktop.read_text()
+    assert "NoDisplay=true" in text and "Icon=ferry" in text           # icon for the dock, not in the menu
+    assert (tmp_path / "icons" / "hicolor" / "48x48" / "apps" / "ferry.png").exists()
+    assert shortcut.ensure_linux_icon() is False                        # nothing to do the second time
+    desktop.write_text(text.replace("Exec=", "Exec=/old/place/"))       # Ferry was moved
+    assert shortcut.ensure_linux_icon() is True and "/old/place/" not in desktop.read_text()
+    shortcut.install()                                                   # visible menu entry stays visible
+    shortcut.ensure_linux_icon()
+    assert "NoDisplay" not in desktop.read_text()
+    desktop.write_text("[Desktop Entry]\nName=Something else\n")       # not ours: left alone
+    assert shortcut.ensure_linux_icon() is False
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows Start menu")
