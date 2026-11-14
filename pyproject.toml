@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ferry-sync"
+dynamic = ["version"]
+description = "Comfortable cross-platform file copy & sync (robocopy-like) with CLI, TUI, GUI, background service and Telegram bot"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "watchdog>=4",
+    "xxhash>=3",
+    "paramiko>=3.4",
+    "textual>=0.80",
+    "pywin32>=306; sys_platform == 'win32'",
+    "xattr>=1.0; sys_platform == 'darwin'",
+]
+
+[project.optional-dependencies]
+gui = ["PySide6-Essentials>=6.6"]
+dev = ["pytest>=8", "pyinstaller>=6.6"]
+
+[project.scripts]
+ferry = "ferry.cli:main"
+
+[project.gui-scripts]
+ferry-gui = "ferry.gui:entry"
+
+[tool.setuptools.dynamic]
+version = { attr = "ferry.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["ferry*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,25 @@
+Ferry - portable file copy & sync
+=================================
+
+ferry      (ferry.exe)      command line, terminal UI (ferry tui) and background service
+ferry-gui  (ferry-gui.exe)  desktop window (macOS: Ferry-gui.app)
+
+No installation and no administrator rights needed.
+
+Portable mode: create an empty folder named "ferry-data" next to the executable
+and Ferry keeps all settings, jobs and logs there (e.g. on a USB stick).
+Otherwise settings live in your user profile (ferry config path shows where).
+
+Quick start
+  ferry copy  <source> <dest>              copy new/changed files
+  ferry mirror <source> <dest>             make dest identical (old versions archived)
+  ferry robo  <source> <dest> /MIR /R:2    robocopy syntax
+  ferry tui                                full-screen terminal UI
+  ferry telegram setup                     connect the Telegram bot
+  ferry service install                    start in the background at login
+
+Cloud storage: put rclone (https://rclone.org/downloads/) next to ferry and
+configure remotes with "rclone config"; then use remote:path as source/dest.
+
+macOS: the first time, right-click the app -> Open (the build is not notarized).
+Linux: chmod +x ferry ferry-gui if needed.
