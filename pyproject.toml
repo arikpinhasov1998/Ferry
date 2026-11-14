@@ -8,6 +8,17 @@ dynamic = ["version"]
 description = "Comfortable cross-platform file copy & sync (robocopy-like) with CLI, TUI, GUI, background service and Telegram bot"
 readme = "README.md"
 requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Arik Pinhasov"}]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: System :: Archiving :: Backup",
+    "Topic :: System :: Filesystems",
+]
 dependencies = [
     "watchdog>=4",
     "xxhash>=3",
@@ -16,6 +27,10 @@ dependencies = [
     "pywin32>=306; sys_platform == 'win32'",
     "xattr>=1.0; sys_platform == 'darwin'",
 ]
+
+[project.urls]
+Homepage = "https://github.com/arikpinhasov1998/Ferry"
+Issues = "https://github.com/arikpinhasov1998/Ferry/issues"
 
 [project.optional-dependencies]
 gui = ["PySide6-Essentials>=6.6"]

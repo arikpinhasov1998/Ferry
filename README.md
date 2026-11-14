@@ -127,3 +127,12 @@ macOS arm64/x64; pushing a `v*` tag creates a GitHub release.
 Code map: `engine.py` (plan + transfer), `backends/` (local, SFTP, rclone), `metadata.py` (ACLs, xattrs…),
 `jobs.py` (jobs, runs, history, resume), `daemon.py` + `api.py` (service, local token-protected API),
 `telegram.py`, `scheduler.py`, `watcher.py`, `cli.py` + `robocopy.py`, `tui.py`, `gui.py`, `service.py`.
+
+## Contributing
+
+Issues and pull requests are welcome. Please run the test suite before sending a PR.
+
+## License
+
+[MIT](LICENSE) © 2026 Arik Pinhasov. The prebuilt binaries bundle third-party libraries under their own licenses,
+including Qt/PySide6 (LGPLv3) in `ferry-gui`, plus paramiko (LGPL), watchdog, textual and xxhash.
