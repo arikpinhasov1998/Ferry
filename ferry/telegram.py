@@ -125,6 +125,7 @@ class TelegramBot:
         self.running = False
         self.offset = None
         self.username = None
+        self.last_error = None
         self.progress_state: dict[str, dict] = {}   # run id -> {"pct": float, "time": float}
         self.manager.subscribe(self._on_event)
 
@@ -169,10 +170,13 @@ class TelegramBot:
                 break
             except Exception as e:
                 log.warning("Telegram not reachable yet: %s", e)
+                self.last_error = ("The bot token was rejected by Telegram" if getattr(e, "code", None) == 401
+                                   else f"Telegram not reachable: {e}")
                 if self.stop_event.wait(min(backoff, 60)):
                     return
                 backoff *= 2
         self.running = True
+        self.last_error = None
         log.info("Telegram bot @%s active", self.username)
         backoff = 1
         while not self.stop_event.is_set():
@@ -180,13 +184,16 @@ class TelegramBot:
                 updates = self.api.call("getUpdates", _timeout=70, timeout=50, offset=self.offset,
                                         allowed_updates=["message", "callback_query"])
                 backoff = 1
+                self.last_error = None
             except Exception as e:
                 if getattr(e, "code", None) == 409:
                     log.error("Another program is using this bot token. Each machine needs its own bot "
                               "(create one per machine with @BotFather).")
+                    self.last_error = "Another machine or program is using this bot token"
                     wait = 30
                 else:
                     log.warning("getUpdates failed: %s", e)
+                    self.last_error = f"Telegram not reachable: {e}"
                     wait = min(backoff, 60)
                     backoff *= 2
                 if self.stop_event.wait(wait):

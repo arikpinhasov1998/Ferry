@@ -161,6 +161,8 @@ class Daemon:
             "recent": [r.info() for r in m.all_runs() if r not in m.active()][-10:],
             "jobs": len(m.jobs.list()),
             "telegram": bool(self.telegram and self.telegram.running),
+            "telegram_bot": self.telegram.username if self.telegram else None,
+            "telegram_error": self.telegram.last_error if self.telegram else None,
             "watching": sorted(self.watchers.watchers) if self.watchers else [],
         }
 

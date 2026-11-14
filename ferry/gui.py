@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 import sys
+import threading
 from datetime import datetime
 
-from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtCore import QObject, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
+                               QScrollArea,
                                QSpinBox, QSplitter, QSystemTrayIcon, QTableWidget, QTableWidgetItem, QTabWidget,
                                QTextBrowser, QToolBar, QVBoxLayout, QWidget)
 
@@ -259,6 +261,231 @@ class JobDialog(QDialog):
         self.accept()
 
 
+class _Bridge(QObject):
+    """Carries results from worker threads to the Qt thread."""
+    event = Signal(str, object)
+
+
+class TelegramSetupDialog(QDialog):
+    """Guided setup: check the token, then catch /start messages to learn who is allowed."""
+
+    def __init__(self, parent, client, machine_name=""):
+        super().__init__(parent)
+        self.client = client
+        self.setWindowTitle("Connect a Telegram bot")
+        self.setMinimumWidth(560)
+        self.bridge = _Bridge()
+        self.bridge.event.connect(self._on_event)
+        self.stop = threading.Event()
+        self.poller = None
+        self.offset = None
+        self.api = None
+        self.bot = None
+        self.found = {}          # chat id -> QCheckBox
+        self.was_enabled = None
+
+        lay = QVBoxLayout(self)
+        step1 = QLabel('<b>1.</b> In Telegram, open <a href="https://t.me/BotFather">@BotFather</a>, send '
+                       '<code>/newbot</code>, pick a name and copy the token it gives you.<br>'
+                       '<small>Use one bot per machine. To control several machines from one place, put their '
+                       'bots in one Telegram group.</small>')
+        step1.setOpenExternalLinks(True)
+        step1.setWordWrap(True)
+        lay.addWidget(step1)
+        form = QFormLayout()
+        row = QHBoxLayout()
+        self.token = QLineEdit()
+        self.token.setEchoMode(QLineEdit.Password)
+        self.token.setPlaceholderText("123456789:AA…")
+        self.show_tok = QCheckBox("Show")
+        self.show_tok.toggled.connect(lambda on: self.token.setEchoMode(QLineEdit.Normal if on else QLineEdit.Password))
+        self.check_btn = QPushButton("Check token")
+        self.check_btn.clicked.connect(self.check_token)
+        self.token.returnPressed.connect(self.check_token)
+        row.addWidget(self.token, 1)
+        row.addWidget(self.show_tok)
+        row.addWidget(self.check_btn)
+        form.addRow("Bot token", row)
+        self.machine = QLineEdit(machine_name)
+        self.machine.setPlaceholderText("shown in every message, e.g. Office-PC")
+        form.addRow("Machine name", self.machine)
+        lay.addLayout(form)
+        self.token_status = QLabel()
+        self.token_status.setWordWrap(True)
+        lay.addWidget(self.token_status)
+
+        self.step2 = QGroupBox("2. Say hello to the bot")
+        v = QVBoxLayout(self.step2)
+        self.step2_text = QLabel()
+        self.step2_text.setOpenExternalLinks(True)
+        self.step2_text.setWordWrap(True)
+        v.addWidget(self.step2_text)
+        self.people = QVBoxLayout()
+        v.addLayout(self.people)
+        self.waiting = QLabel("<i>Waiting for messages…</i>")
+        v.addWidget(self.waiting)
+        self.step2.setEnabled(False)
+        lay.addWidget(self.step2)
+
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Cancel)
+        self.finish_btn = self.buttons.addButton("Finish and connect", QDialogButtonBox.AcceptRole)
+        self.finish_btn.setEnabled(False)
+        self.buttons.accepted.connect(self.finish)
+        self.buttons.rejected.connect(self.reject)
+        lay.addWidget(self.buttons)
+
+    # --------------------------------------------------------- workers --
+    def _bg(self, kind, fn):
+        def run():
+            try:
+                self.bridge.event.emit(kind, fn())
+            except Exception as e:
+                self.bridge.event.emit(kind + "_error", e)
+        threading.Thread(target=run, daemon=True).start()
+
+    def check_token(self):
+        from ferry.telegram import TelegramApi
+        tok = self.token.text().strip()
+        if ":" not in tok:
+            self.token_status.setText("<span style='color:#c62828'>That doesn't look like a bot token "
+                                      "(it has the form 123456789:AA…).</span>")
+            return
+        self._stop_polling()
+        self.check_btn.setEnabled(False)
+        self.token_status.setText("Checking…")
+        self.api = TelegramApi(tok)
+        self._bg("me", lambda: self.api.call("getMe"))
+
+    def _start_polling(self):
+        # The service's own bot would compete for messages: pause it while we listen.
+        if self.was_enabled is None:
+            try:
+                cfg = self.client.get("/config")
+                self.was_enabled = bool(cfg["telegram"]["enabled"])
+                if self.was_enabled:
+                    self.client.post("/config", {"telegram.enabled": False})
+            except Exception:
+                self.was_enabled = False
+        self.stop.clear()
+        api, stop = self.api, self.stop
+
+        def loop():
+            try:
+                api.call("deleteWebhook")
+            except Exception:
+                pass
+            while not stop.is_set():
+                try:
+                    ups = api.call("getUpdates", _timeout=15, timeout=3, offset=self.offset)
+                except Exception as e:
+                    self.bridge.event.emit("poll_error", e)
+                    stop.wait(3)
+                    continue
+                for u in ups:
+                    self.offset = u["update_id"] + 1
+                    m = u.get("message") or u.get("my_chat_member")
+                    if m:
+                        self.bridge.event.emit("msg", m)
+        self.poller = threading.Thread(target=loop, daemon=True)
+        self.poller.start()
+
+    def _stop_polling(self):
+        self.stop.set()
+        if self.poller:
+            self.poller.join(6)
+            self.poller = None
+
+    # ---------------------------------------------------------- events --
+    def _on_event(self, kind, data):
+        if kind == "me":
+            self.bot = data.get("username")
+            self.check_btn.setEnabled(True)
+            self.token_status.setText(f"<span style='color:#2e7d32'>✓ Token works: bot "
+                                      f"<b>@{esc_html(self.bot)}</b> ({esc_html(data.get('first_name', ''))})</span>")
+            self.step2_text.setText(
+                f'Open <a href="https://t.me/{self.bot}">t.me/{self.bot}</a> on your phone or computer and press '
+                f'<b>Start</b> (or send <code>/start</code>). Everyone who should control this machine can do '
+                f'the same. To use a group, add the bot to the group and send <code>/start@{self.bot}</code> there.')
+            self.step2.setEnabled(True)
+            self.finish_btn.setEnabled(True)
+            self._start_polling()
+        elif kind == "me_error":
+            self.check_btn.setEnabled(True)
+            msg = ("Telegram rejected this token. Copy it again from @BotFather."
+                   if getattr(data, "code", None) == 401 else f"Could not reach Telegram: {data}")
+            self.token_status.setText(f"<span style='color:#c62828'>✗ {esc_html(msg)}</span>")
+        elif kind == "poll_error":
+            code = getattr(data, "code", None)
+            self.waiting.setText("<i style='color:#ef6c00'>" + esc_html(
+                "Another program is using this bot (each machine needs its own bot)" if code == 409
+                else f"Telegram not reachable, retrying… ({data})") + "</i>")
+        elif kind == "msg":
+            chat = data.get("chat") or {}
+            cid = chat.get("id")
+            if cid is None or cid in self.found:
+                return
+            if chat.get("type") == "private":
+                u = data.get("from") or {}
+                name = " ".join(filter(None, [u.get("first_name"), u.get("last_name")]))
+                label = f"👤 {name}" + (f" (@{u['username']})" if u.get("username") else "") + f" — ID {cid}"
+            else:
+                label = f"👥 Group “{chat.get('title', '')}” — ID {cid} (everyone in it can control this machine)"
+            cb = QCheckBox("Allow " + label)
+            cb.setChecked(chat.get("type") == "private")
+            self.found[cid] = cb
+            self.people.addWidget(cb)
+            self.waiting.setText("<i>Got it. Waiting for more people… or press Finish.</i>")
+        QTimer.singleShot(0, self.adjustSize)     # grow to fit new text
+
+    # ---------------------------------------------------------- finish --
+    def finish(self):
+        allowed = [cid for cid, cb in self.found.items() if cb.isChecked()]
+        if not allowed and QMessageBox.question(
+                self, "Telegram", "Nobody is allowed yet, so the bot will ignore everyone.\n"
+                "You can add IDs later (send /whoami to the bot). Continue?") != QMessageBox.Yes:
+            return
+        self._stop_polling()
+        try:
+            if self.offset is not None:          # mark the /start messages as handled
+                self.api.call("getUpdates", offset=self.offset, timeout=0)
+        except Exception:
+            pass
+        try:
+            cfg = self.client.get("/config")
+            ids = sorted(set(cfg["telegram"]["allowed_ids"]) | set(allowed))
+            groups = [c for c in allowed if c < 0]
+            body = {"telegram.token": self.token.text().strip(), "telegram.allowed_ids": ids}
+            if groups:
+                body["telegram.notify_chat_ids"] = sorted(set(cfg["telegram"]["notify_chat_ids"] or []) | set(groups))
+            if self.machine.text().strip():
+                body["machine_name"] = self.machine.text().strip()
+            body["telegram.enabled"] = True
+            self.client.post("/config", body)
+            self.was_enabled = None
+            res = self.client.post("/telegram/test")
+        except Exception as e:
+            return QMessageBox.warning(self, "Telegram", f"Could not save: {e}")
+        if res.get("ok"):
+            QMessageBox.information(self, "Telegram", f"Connected! @{self.bot} sent a test message to "
+                                    f"{len(res.get('sent_to') or [])} chat(s). Try /status in Telegram.")
+        else:
+            QMessageBox.warning(self, "Telegram", f"Saved, but the test message failed: {res.get('error')}")
+        self.accept()
+
+    def reject(self):
+        self._stop_polling()
+        if self.was_enabled:
+            try:
+                self.client.post("/config", {"telegram.enabled": True})
+            except Exception:
+                pass
+        super().reject()
+
+
+def esc_html(s) -> str:
+    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 class MainWindow(QMainWindow):
     def __init__(self, client):
         super().__init__()
@@ -352,13 +579,29 @@ class MainWindow(QMainWindow):
     def _build_settings(self):
         w = QWidget()
         lay = QVBoxLayout(w)
-        g = QGroupBox("Telegram bot (one bot per machine — create it with @BotFather)")
+        g = QGroupBox("Telegram bot")
         fl = QFormLayout(g)
+        top = QHBoxLayout()
+        self.s_tg_state = QLabel("…")
+        self.s_tg_state.setOpenExternalLinks(True)
+        self.s_tg_state.setWordWrap(True)
+        self.s_tg_setup = QPushButton("Set up bot…")
+        self.s_tg_setup.clicked.connect(self.setup_telegram)
+        t = QPushButton("Send test message")
+        t.clicked.connect(self.test_telegram)
+        self.s_tg_disconnect = QPushButton("Disconnect")
+        self.s_tg_disconnect.clicked.connect(self.disconnect_telegram)
+        top.addWidget(self.s_tg_state, 1)
+        top.addWidget(self.s_tg_setup)
+        top.addWidget(t)
+        top.addWidget(self.s_tg_disconnect)
+        fl.addRow(top)
         self.s_machine = QLineEdit()
-        self.s_tg_enabled = QCheckBox("Enabled")
+        self.s_tg_enabled = QCheckBox("Bot enabled")
         self.s_tg_token = QLineEdit()
         self.s_tg_token.setEchoMode(QLineEdit.Password)
         self.s_tg_token.setPlaceholderText("leave empty to keep the current token")
+        self.s_tg_token.setToolTip("Normally set by “Set up bot…”. Paste a new token here to replace it.")
         self.s_tg_ids = QLineEdit()
         self.s_tg_ids.setPlaceholderText("your Telegram user ID (send /whoami to the bot), comma separated")
         self.s_tg_chats = QLineEdit()
@@ -369,27 +612,20 @@ class MainWindow(QMainWindow):
         self.s_tg_min = QSpinBox()
         self.s_tg_min.setRange(0, 1440)
         self.s_tg_min.setSuffix(" min")
+        self.s_tg_pct.setSpecialValueText("off")
+        self.s_tg_min.setSpecialValueText("off")
         self.s_tg_start = QCheckBox("Notify when jobs start")
         self.s_tg_finish = QCheckBox("Notify when jobs finish")
         self.s_tg_errors = QCheckBox("Notify on errors")
         fl.addRow("Machine name", self.s_machine)
         fl.addRow("", self.s_tg_enabled)
         fl.addRow("Bot token", self.s_tg_token)
-        fl.addRow("Allowed user IDs", self.s_tg_ids)
+        fl.addRow("Allowed users/groups", self.s_tg_ids)
         fl.addRow("Notify chats", self.s_tg_chats)
-        fl.addRow("Progress update every", self.s_tg_pct)
-        fl.addRow("…or every", self.s_tg_min)
+        fl.addRow("Progress message every", self.s_tg_pct)
+        fl.addRow("…and/or every", self.s_tg_min)
         for cb in (self.s_tg_start, self.s_tg_finish, self.s_tg_errors):
             fl.addRow("", cb)
-        row = QHBoxLayout()
-        b = QPushButton("Save")
-        b.clicked.connect(self.save_settings)
-        t = QPushButton("Send test message")
-        t.clicked.connect(self.test_telegram)
-        row.addWidget(b)
-        row.addWidget(t)
-        row.addStretch(1)
-        fl.addRow(row)
         lay.addWidget(g)
 
         g = QGroupBox("Defaults")
@@ -415,8 +651,21 @@ class MainWindow(QMainWindow):
         hl.addWidget(bi)
         hl.addWidget(bu)
         lay.addWidget(g)
+        row = QHBoxLayout()
+        b = QPushButton("Save settings")
+        b.setDefault(True)
+        b.clicked.connect(self.save_settings)
+        r = QPushButton("Undo changes")
+        r.clicked.connect(self.load_settings)
+        row.addStretch(1)
+        row.addWidget(r)
+        row.addWidget(b)
+        lay.addLayout(row)
         lay.addStretch(1)
-        self.tabs.addTab(w, "Settings")
+        sa = QScrollArea()
+        sa.setWidgetResizable(True)
+        sa.setWidget(w)
+        self.tabs.addTab(sa, "Settings")
 
     def _build_tray(self):
         self.tray = None
@@ -487,6 +736,8 @@ class MainWindow(QMainWindow):
                                   f"Telegram {'✓' if st['telegram'] else '✗'} · live sync {len(st['watching'])}")
         if self.tray:
             self.tray.setToolTip(f"Ferry — {len(st['active'])} running")
+        self._tg_status = st
+        self._update_tg_state()
         runs.sort(key=lambda r: (r["phase"] in FINAL, -float(r.get("started") or 0)))
         selected = self.selected_run()
         self.t_runs.setRowCount(len(runs))
@@ -707,6 +958,8 @@ class MainWindow(QMainWindow):
         if not cfg:
             return
         tg = cfg["telegram"]
+        self._tg_cfg = tg
+        self._update_tg_state()
         self.s_machine.setText(cfg.get("machine_name", ""))
         self.s_tg_enabled.setChecked(tg["enabled"])
         self.s_tg_token.setText("")
@@ -753,6 +1006,46 @@ class MainWindow(QMainWindow):
         if self._call(lambda: self.client.post("/config", body)) is not None:
             self.statusBar().showMessage("Settings saved", 4000)
             self.load_settings()
+
+    def _update_tg_state(self):
+        st = getattr(self, "_tg_status", None) or {}
+        cfg = getattr(self, "_tg_cfg", None) or {}
+        bot = st.get("telegram_bot")
+        link = f' <a href="https://t.me/{bot}">@{bot}</a>' if bot else ""
+        if not cfg.get("token"):
+            text, color = "Not set up. Press “Set up bot…” to control Ferry from your phone.", "#757575"
+        elif not cfg.get("enabled"):
+            text, color = "Bot is turned off.", "#757575"
+        elif st.get("telegram"):
+            n = len(cfg.get("allowed_ids") or [])
+            text, color = f"● Connected{link} · {n} allowed user(s)/group(s)", "#2e7d32"
+            if not n:
+                text, color = f"● Connected{link}, but nobody is allowed yet: add your ID below", "#ef6c00"
+        elif st.get("telegram_error"):
+            text, color = f"✗ {esc_html(st['telegram_error'])}", "#c62828"
+        else:
+            text, color = "Connecting…", "#ef6c00"
+        html = f"<span style='color:{color}'>{text}</span>"
+        if self.s_tg_state.text() != html:
+            self.s_tg_state.setText(html)
+        self.s_tg_disconnect.setEnabled(bool(cfg.get("token")))
+        self.s_tg_setup.setText("Change bot…" if cfg.get("token") else "Set up bot…")
+
+    def setup_telegram(self):
+        dlg = TelegramSetupDialog(self, self.client, self.s_machine.text().strip())
+        dlg.exec()
+        self.load_settings()
+        QTimer.singleShot(1500, self.refresh)
+
+    def disconnect_telegram(self):
+        if QMessageBox.question(self, "Telegram", "Remove the bot token from this machine? The bot stops "
+                                "answering. (Delete the bot itself in @BotFather if you don't need it.)") \
+                != QMessageBox.Yes:
+            return
+        if self._call(lambda: self.client.post("/config", {"telegram.token": "", "telegram.enabled": False})) \
+                is not None:
+            self.load_settings()
+            self.refresh()
 
     def test_telegram(self):
         res = self._call(lambda: self.client.post("/telegram/test"))
